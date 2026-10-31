@@ -535,6 +535,10 @@ export const api = {
     apiFetch<{ ok: true; message: string }>("/api/logout", {
       method: "POST",
     }),
+  testReset: () =>
+    apiFetch<{ ok: true }>("/api/__test__/reset", {
+      method: "POST",
+    }),
   home: () => apiFetch<HomePayload>("/api/home"),
   lessons: () => apiFetch<{ lessons: LessonRow[] }>("/api/lessons"),
   review: () => apiFetch<{ queues: ReviewQueues }>("/api/review"),

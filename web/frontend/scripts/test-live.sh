@@ -24,7 +24,7 @@ PYTHONPATH=database:pipeline:service:web \
   service/.venv/bin/python -m evolvingclass_web.seed
 
 echo "==> Starting live API server on $API_URL"
-PYTHONPATH=database:pipeline:service:web PORT="$PORT" \
+PYTHONPATH=database:pipeline:service:web PORT="$PORT" ALLOW_TEST_RESET=1 \
   service/.venv/bin/python -m evolvingclass_web.app &
 FLASK_PID=$!
 

@@ -9,6 +9,8 @@ is unchanged: logged-out calls get JSON 401s (see ``_guard`` in
 
 from __future__ import annotations
 
+import os
+
 from flask import Flask, g, jsonify, request
 from flask import session as flask_session
 
@@ -115,6 +117,40 @@ def register_api(app: Flask, db, current_user) -> None:
     @app.route("/api/health", methods=["GET"], endpoint="api_health")
     def api_health():
         return jsonify({"ok": True})
+
+    if os.environ.get("ALLOW_TEST_RESET") == "1":
+        @app.route("/api/__test__/reset", methods=["POST"],
+                   endpoint="api_test_reset")
+        def api_test_reset():
+            """Restore seeded demo data for the live interaction suite.
+
+            Test-only: the route exists solely when ALLOW_TEST_RESET=1
+            (set by test-live.sh) and refuses non-sqlite databases, so
+            a real database can never be wiped through it.
+            """
+            from sqlalchemy import create_engine
+
+            from DataModels import Base
+
+            from .seed import seed
+
+            url = app.config.get("database_url", "")
+            if "sqlite" not in url:
+                return _err("Test reset supports sqlite only.", 403)
+            old = g.pop("db", None)
+            if old is not None:
+                old.close()
+            live = app.config.get("engine")
+            if live is not None:
+                live.dispose()
+            engine = create_engine(
+                url, connect_args={"check_same_thread": False})
+            try:
+                Base.metadata.drop_all(engine)
+            finally:
+                engine.dispose()
+            seed(url)
+            return jsonify({"ok": True})
 
     @app.route("/api/session", methods=["GET"], endpoint="api_session")
     def api_session():
