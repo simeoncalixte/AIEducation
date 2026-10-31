@@ -8,16 +8,29 @@ ROOT="$(cd "$DIR/../../.." && pwd)"
 PORT="${PORT:-5001}"
 API_URL="http://127.0.0.1:${PORT}"
 
+SCRATCH=""
+if [ -z "${DATABASE_URL:-}" ]; then
+  SCRATCH="$(mktemp -d)"
+  export DATABASE_URL="sqlite:///${SCRATCH}/review.db"
+fi
+
+cleanup() {
+  kill "$FLASK_PID" 2>/dev/null || true
+  if [ -n "$SCRATCH" ]; then
+    rm -rf "$SCRATCH"
+  fi
+}
+trap cleanup EXIT
+
 cd "$ROOT"
-echo "==> Seeding demo data (idempotent; uses ${DATABASE_URL:-web/dev.db})"
+echo "==> Seeding fresh demo data into $DATABASE_URL"
 PYTHONPATH=database:pipeline:service:web \
   service/.venv/bin/python -m evolvingclass_web.seed
 
 echo "==> Starting live API server on $API_URL"
-PYTHONPATH=database:pipeline:service:web PORT="$PORT" \
+PYTHONPATH=database:pipeline:service:web PORT="$PORT" ALLOW_TEST_RESET=1 \
   service/.venv/bin/python -m evolvingclass_web.app &
 FLASK_PID=$!
-trap 'kill $FLASK_PID 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 30); do
   if curl -sf "$API_URL/api/health" >/dev/null 2>&1; then

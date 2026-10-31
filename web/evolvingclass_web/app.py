@@ -83,6 +83,8 @@ _PUBLIC_ENDPOINTS = frozenset({"login", "logout", "static"})
 
 _PUBLIC_API = frozenset({
     "api_health", "api_session", "api_login_choices", "api_login",
+    # Registered only when ALLOW_TEST_RESET=1 (live interaction suite).
+    "api_test_reset",
 })
 
 _ADMIN_ONLY = frozenset({"audit"})
@@ -108,8 +110,10 @@ def create_app(database_url: str | None = None) -> Flask:
     app.secret_key = os.environ.get("FLASK_SECRET", "dev-review-secret")
     connect_args = {"check_same_thread": False} if "sqlite" in url else {}
     engine = create_engine(url, connect_args=connect_args)
+    app.config["engine"] = engine
     app.config["make_session"] = sessionmaker(bind=engine)
     app.config["preview_dir"] = os.environ.get("PREVIEW_DIR")
+    app.config["database_url"] = url
 
     @app.teardown_appcontext
     def _close_session(_exc: BaseException | None) -> None:
