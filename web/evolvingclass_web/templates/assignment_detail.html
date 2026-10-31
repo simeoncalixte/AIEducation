@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Progress · {{ a.lesson }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{{ url_for('assignments') }}">Assignments</a> /
+{{ a.lesson }} → {{ a.target }}</p>
+<h1>{{ a.lesson }} → {{ a.target }}</h1>
+
+{% for student in a.students %}
+<h2>{{ student.name }}</h2>
+<p class="muted">Enjoyment rating:
+  <strong>{{ student.rating if student.rating is not none else "—" }}</strong>
+  · {{ student.attempts | length }} attempt(s)</p>
+{% for attempt in student.attempts %}
+<h3>Attempt #{{ attempt.id }}{% if attempt.retry_of %} (retry of #{{ attempt.retry_of }}){% endif %}
+  · {{ "finished " + attempt.finished if attempt.finished else "in progress" }}</h3>
+<h4>Goal verdicts</h4>
+{% if attempt.verdicts %}
+<table>
+  <tr><th>Goal</th><th>Result</th><th>Override</th></tr>
+  {% for v in attempt.verdicts %}
+  <tr>
+    <td>{{ v.goal }}</td>
+    <td><span class="pill {{ 'approved' if v.passed else 'rejected' }}">
+      {{ "pass" if v.passed else "fail" }}</span>
+      {% if v.overridden %}(overridden: {{ v.override_reason }}){% endif %}</td>
+    <td><form method="post" class="inline"
+        action="{{ url_for('override_verdict', event_id=v.event_id) }}">
+      <input type="hidden" name="next"
+        value="{{ url_for('assignment_detail', assignment_id=a.id) }}">
+      <input type="text" name="reason" size="18" placeholder="Reason" required>
+      <select name="corrected">
+        <option value="pass">Pass</option>
+        <option value="fail">Fail</option>
+      </select>
+      <input type="text" name="score" size="4" placeholder="0–1">
+      <button type="submit">Override</button>
+    </form></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">No verdicts yet for this attempt.</p>
+{% endif %}
+<h4>Misconception flags</h4>
+{% if attempt.flags %}
+<ul>
+  {% for flag in attempt.flags %}
+  <li>#{{ flag.id }} · {{ flag.ref }} — {{ flag.note }}
+    <span class="muted">({{ flag.at }})</span></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No flags on this attempt.</p>
+{% endif %}
+<form method="post" class="block"
+  action="{{ url_for('flag_attempt', attempt_id=attempt.id) }}">
+  <input type="hidden" name="next"
+    value="{{ url_for('assignment_detail', assignment_id=a.id) }}">
+  <label>Misconception
+    <select name="misconception_id">
+      <option value="">General note</option>
+      {% for misc in a.misconceptions %}
+      <option value="{{ misc.id }}">{{ misc.label }}</option>
+      {% endfor %}
+    </select></label>
+  <label>Note <input type="text" name="note" size="40"></label>
+  <button type="submit">Flag misconception</button>
+</form>
+{% else %}
+<div class="empty"><p>No attempts yet.</p></div>
+{% endfor %}
+{% else %}
+<div class="empty"><p>No students in scope.</p></div>
+{% endfor %}
+{% endblock %}

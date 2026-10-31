@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite
+*.sqlite3
+.alembic_cookie
+.env
+node_modules/
+dist/
+storybook-static/
+*.egg-info/
+.DS_Store

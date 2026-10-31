@@ -1,0 +1,16 @@
+[project]
+name = "evolvingclass-pipeline"
+version = "0.1.0"
+description = "Asset generation pipeline: explicit agent, pipeline, and adapter boundaries"
+requires-python = ">=3.11"
+dependencies = [
+    "sqlalchemy>=2.0",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["evolvingclass_pipeline*"]

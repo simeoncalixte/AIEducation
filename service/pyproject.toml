@@ -1,0 +1,16 @@
+[project]
+name = "evolvingclass-service"
+version = "0.1.0"
+description = "Teacher-supervised publication transactions for EvolvingClass"
+requires-python = ">=3.11"
+dependencies = ["sqlalchemy>=2.0", "python-dotenv>=1.0"]
+
+[project.optional-dependencies]
+web = ["flask>=3.0", "psycopg[binary]>=3.0"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["evolvingclass_service*"]

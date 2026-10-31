@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h1>Welcome, {{ user.name }}</h1>
+{% if user.role in ("teacher", "admin") %}
+<ul>
+  <li><a href="{{ url_for('queues') }}">Review queues</a>
+    <span class="muted">— approve asset, stage, and lesson proposals</span></li>
+  <li><a href="{{ url_for('lessons') }}">Lessons</a>
+    <span class="muted">— brief lessons for agent drafting</span></li>
+  <li><a href="{{ url_for('assignments') }}">Assignments</a>
+    <span class="muted">— assign lessons and monitor progress</span></li>
+  {% if user.role == "admin" %}
+  <li><a href="{{ url_for('audit') }}">Audit</a>
+    <span class="muted">— school-wide status and approval history</span></li>
+  {% endif %}
+</ul>
+{% else %}
+<h2>My assignments</h2>
+{% if assignments %}
+<table>
+  <tr><th>Lesson</th><th>Status</th><th>Attempts</th><th></th></tr>
+  {% for a in assignments %}
+  <tr><td>{{ a.lesson }}</td>
+    <td>{{ a.status }}</td>
+    <td>{{ a.attempts }}</td>
+    <td><a href="{{ url_for('play_briefing', assignment_id=a.id) }}">Open…</a></td></tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="empty"><p>No assignments yet. Your teacher's assignments will
+appear here.</p></div>
+{% endif %}
+{% endif %}
+{% endblock %}

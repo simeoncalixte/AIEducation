@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Audit{% endblock %}
+{% block content %}
+<h1>School audit</h1>
+
+<h2>Lesson status by classroom</h2>
+{% for room in status %}
+<h3>{{ room.name }}</h3>
+{% if room.lessons %}
+<table>
+  <tr><th>Lesson</th><th>Subject</th><th>Drafts</th><th>Published</th>
+      <th>Retired</th><th>Assignments</th><th>Attempts</th></tr>
+  {% for lesson in room.lessons %}
+  <tr><td>{{ lesson.title }}</td><td>{{ lesson.subject }}</td>
+      <td>{{ lesson.drafts }}</td><td>{{ lesson.published }}</td>
+      <td>{{ lesson.retired }}</td><td>{{ lesson.assignments }}</td>
+      <td>{{ lesson.attempts }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="empty"><p>No lessons in this classroom.</p></div>
+{% endif %}
+{% else %}
+<div class="empty"><p>No classrooms yet.</p></div>
+{% endfor %}
+
+<h2>Approvals and publish history</h2>
+<form method="get" class="block">
+  <label for="actor">Actor</label>
+  <select id="actor" name="actor">
+    <option value="">Everyone</option>
+    {% for u in actors %}
+    <option value="{{ u.id }}"
+      {% if filters.actor == u.id %}selected{% endif %}>{{ u.name }}
+      ({{ u.role }})</option>
+    {% endfor %}
+  </select>
+  <label for="since">Since</label>
+  <input type="date" id="since" name="since"
+    value="{{ filters.since or '' }}">
+  <label for="until">Until</label>
+  <input type="date" id="until" name="until"
+    value="{{ filters.until or '' }}">
+  <div><button type="submit">Filter</button></div>
+</form>
+{% if trail %}
+<table>
+  <tr><th>At</th><th>Actor</th><th>Kind</th><th>Result</th><th>Target</th>
+      <th>Rationale</th></tr>
+  {% for row in trail %}
+  <tr><td>{{ row.at_text }}</td><td>{{ row.actor }}</td>
+      <td>{{ row.kind }}</td><td>{{ row.result }}</td>
+      <td>{{ row.target }}</td><td>{{ row.rationale }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="empty"><p>No history matches these filters.</p></div>
+{% endif %}
+{% endblock %}

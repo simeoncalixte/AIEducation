@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Lessons{% endblock %}
+{% block content %}
+<h1>Lessons</h1>
+<p class="muted">Pick a lesson to brief it: your focus and constraints become
+a brief directive, and agents draft a lesson proposal for review.</p>
+<table>
+  <tr><th>Lesson</th><th>Subject</th><th>Classroom</th><th>Drafts</th>
+      <th>Published</th><th></th></tr>
+  {% for lesson in lessons %}
+  <tr>
+    <td>{{ lesson.title }}</td>
+    <td>{{ lesson.subject }}</td>
+    <td>{{ lesson.classroom }}</td>
+    <td>{{ lesson.drafts }}</td>
+    <td>{{ lesson.published }}</td>
+    <td><a href="{{ url_for('brief', lesson_id=lesson.id) }}">Brief…</a>
+      <a href="{{ url_for('directives', lesson_id=lesson.id) }}">Directives</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No lessons yet.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
