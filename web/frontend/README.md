@@ -17,10 +17,11 @@ From `web/frontend`:
 npm run review
 ```
 
-This seeds demo data (idempotent), starts the live API server on
-`http://127.0.0.1:5001`, and opens Storybook on
+This seeds fresh demo data into a scratch database, starts the live
+API server on `http://127.0.0.1:5001`, and opens Storybook on
 `http://127.0.0.1:6006` against it. `PORT` overrides the API port;
-`DATABASE_URL` overrides the database (default `web/dev.db`).
+`DATABASE_URL` overrides the database (a scratch temp DB by default,
+so story resets never touch `web/dev.db`).
 
 The loop: change code, re-run the interaction in Storybook, inspect.
 Page stories drive real flows through the UI against the live server
