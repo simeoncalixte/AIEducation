@@ -723,5 +723,5 @@ if __name__ == "__main__":
     _url = os.environ.get("DATABASE_URL") or (
         f"sqlite:///{os.path.join(os.path.dirname(_here), 'dev.db')}")
     ensure_schema(_url)
-    create_app(_url).run(host="127.0.0.1",
+    create_app(_url).run(host=os.environ.get("HOST", "127.0.0.1"),
                          port=int(os.environ.get("PORT", "5000")))
