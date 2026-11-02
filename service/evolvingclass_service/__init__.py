@@ -13,8 +13,11 @@ from .goals import evaluate_attempt
 from .play import (
     answer_challenge,
     finish_attempt,
+    latest_checkpoint,
     rate_lesson,
+    record_client_event,
     retry_attempt,
+    save_checkpoint,
     start_attempt,
 )
 from .publication import (
@@ -45,10 +48,13 @@ __all__ = [
     "evaluate_attempt",
     "finish_attempt",
     "flag_misconception",
+    "latest_checkpoint",
     "rate_lesson",
+    "record_client_event",
     "record_verdict_override",
     "retry_attempt",
     "revise_asset_version",
+    "save_checkpoint",
     "start_attempt",
     "submit_brief",
     "update_directive",

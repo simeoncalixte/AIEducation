@@ -34,8 +34,11 @@ from evolvingclass_service import (
     publish_asset_version,
     publish_lesson_version,
     publish_stage_version,
+    latest_checkpoint,
     rate_lesson,
     record_approval,
+    record_client_event,
+    save_checkpoint,
     record_verdict_override,
     retire_asset_version,
     retire_lesson_version,
@@ -374,6 +377,110 @@ def register_api(app: Flask, db, current_user) -> None:
         else:
             nxt = f"/play/attempt/{attempt_id}/debrief"
         return jsonify({"message": "Answer recorded.", "next": nxt})
+
+    @app.route("/api/play/attempt/<int:attempt_id>/events",
+               methods=["POST"], endpoint="api_play_events")
+    def api_play_events(attempt_id: int):
+        user = current_user()
+        if user is None:  # pragma: no cover - _guard answers first
+            return _err("Log in first.", 401)
+        _, denied = _attempt_access(attempt_id, True)
+        if denied is not None:
+            return denied
+        payload = _payload()
+        client_event_id = payload.get("client_event_id", "")
+        verb = payload.get("verb", "")
+        if (not isinstance(client_event_id, str) or not client_event_id.strip()
+                or len(client_event_id) > 100):
+            return _err("Event rejected (invalid_event): "
+                        "client_event_id must be 1-100 characters.",
+                        400)
+        if not isinstance(verb, str) or not verb.strip():
+            return _err("Event rejected (invalid_event): "
+                        "verb must be a non-blank string.", 400)
+        extras = payload.get("payload", {})
+        if not isinstance(extras, dict):
+            return _err("Event rejected (invalid_event): "
+                        "payload must be an object.", 400)
+        for field in ("object_type", "object_ref"):
+            if field in payload and not isinstance(payload[field], str):
+                return _err(f"Event rejected (invalid_event): "
+                            f"{field} must be a string.", 400)
+        try:
+            event_id, duplicate = record_client_event(
+                app.config["make_session"], attempt_id, user["id"],
+                client_event_id.strip(), verb,
+                object_type=payload.get("object_type", "") or "",
+                object_ref=payload.get("object_ref", "") or "",
+                payload=dict(extras))
+        except PublicationError as exc:
+            status = {"not_found": 404, "forbidden": 403}.get(exc.code, 400)
+            return jsonify(
+                {"error": f"Event rejected ({exc.code}): {exc}",
+                 "code": exc.code}), status
+        return jsonify({
+            "message": ("Event already recorded." if duplicate
+                        else "Event recorded."),
+            "event_id": event_id,
+            "duplicate": duplicate,
+        })
+
+    @app.route("/api/play/attempt/<int:attempt_id>/checkpoints",
+               methods=["POST"], endpoint="api_play_checkpoint_save")
+    def api_play_checkpoint_save(attempt_id: int):
+        user = current_user()
+        if user is None:  # pragma: no cover - _guard answers first
+            return _err("Log in first.", 401)
+        _, denied = _attempt_access(attempt_id, True)
+        if denied is not None:
+            return denied
+        payload = _payload()
+        try:
+            stage_version_id = int(payload.get("stage_version_id"))
+        except (TypeError, ValueError):
+            return _err("Checkpoint rejected (invalid_checkpoint): "
+                        "stage_version_id must be an integer.", 400)
+        state = payload.get("state", {})
+        if not isinstance(state, dict):
+            return _err("Checkpoint rejected (invalid_checkpoint): "
+                        "state must be an object.", 400)
+        try:
+            checkpoint_id, sequence_no = save_checkpoint(
+                app.config["make_session"], attempt_id, user["id"],
+                stage_version_id, dict(state))
+        except PublicationError as exc:
+            status = {"not_found": 404, "forbidden": 403}.get(exc.code, 400)
+            return jsonify(
+                {"error": f"Checkpoint rejected ({exc.code}): {exc}",
+                 "code": exc.code}), status
+        return jsonify({
+            "message": "Checkpoint recorded.",
+            "checkpoint_id": checkpoint_id,
+            "checkpoint_sequence": sequence_no,
+        })
+
+    @app.route("/api/play/attempt/<int:attempt_id>/checkpoints/latest",
+               methods=["GET"], endpoint="api_play_checkpoint_latest")
+    def api_play_checkpoint_latest(attempt_id: int):
+        user = current_user()
+        if user is None:  # pragma: no cover - _guard answers first
+            return _err("Log in first.", 401)
+        access, denied = _attempt_access(attempt_id, False)
+        if denied is not None:
+            return denied
+        try:
+            found = latest_checkpoint(
+                app.config["make_session"], attempt_id,
+                user["id"] if not access["preview"]
+                else present.attempt_owner(db(), attempt_id))
+        except PublicationError as exc:
+            status = {"not_found": 404, "forbidden": 403}.get(exc.code, 400)
+            return jsonify(
+                {"error": f"Checkpoint rejected ({exc.code}): {exc}",
+                 "code": exc.code}), status
+        if found is None:
+            return _err("No checkpoints yet.", 404)
+        return jsonify({"checkpoint": dict(found, preview=access["preview"])})
 
     @app.route("/api/play/attempt/<int:attempt_id>/debrief",
                methods=["GET"], endpoint="api_play_debrief")

@@ -164,6 +164,29 @@ class ApiPlayTestCase(unittest.TestCase):
         self.assertEqual(payload["code"], "not_found")
         self.assertIn("not_found", payload["error"])
 
+    def test_resume_after_close_returns_open_attempt(self):
+        # Close mid-lesson: a brand-new client with no session cookie
+        # logs back in and resumes the same open attempt (SCRUM-24).
+        self._publish_challenge_lesson()
+        aid = self._assign()
+        self.login("sam")
+        first = self.client.post(f"/api/play/{aid}/start")
+        attempt_id = first.get_json()["attempt_id"]
+        self.client.post(
+            f"/api/play/attempt/{attempt_id}/challenge/1/answer",
+            json={"goals": ["crater"], "note": "before close"})
+        reopened = self.app.test_client()
+        reopened.post("/api/login", json={"login_ref": "sam"})
+        resumed = reopened.post(f"/api/play/{aid}/start")
+        self.assertEqual(resumed.status_code, 200)
+        self.assertEqual(resumed.get_json()["attempt_id"], attempt_id)
+        challenge = reopened.get(
+            f"/api/play/attempt/{attempt_id}/challenge/1").get_json()
+        self.assertEqual(
+            challenge["challenge"]["goals"],
+            [{"key": "crater", "answered": True},
+             {"key": "vent", "answered": False}])
+
 
 if __name__ == "__main__":
     unittest.main()

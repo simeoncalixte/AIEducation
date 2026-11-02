@@ -7,12 +7,17 @@ from typing import Any, Mapping, Sequence
 
 from evolvingclass_pipeline.domain import (
     AssetKind,
+    DirectiveInput,
     DraftRef,
     GeneratedContent,
     GenerationRequest,
     LibraryMatch,
     PreviewRequest,
     PreviewResult,
+    RunRecord,
+    StageAssembly,
+    StageAssemblyRequest,
+    StageDraftRef,
     Tag,
 )
 
@@ -30,6 +35,35 @@ class GenerationBackend(ABC):
 
     @abstractmethod
     def generate(self, request: GenerationRequest) -> GeneratedContent: ...
+
+
+class StageBackend(ABC):
+    """Stage assembly seam. Template today, model-backed tomorrow."""
+
+    @property
+    @abstractmethod
+    def agent_ref(self) -> str: ...
+
+    @property
+    @abstractmethod
+    def model_ref(self) -> str: ...
+
+    @abstractmethod
+    def assemble(self, request: StageAssemblyRequest) -> StageAssembly: ...
+
+
+class StageLibraryPort(ABC):
+    """Stage draft persistence."""
+
+    @abstractmethod
+    def save_stage_draft(
+        self,
+        assembly: StageAssembly,
+        directives: tuple[DirectiveInput, ...],
+        created_by_id: int,
+        run_id: int,
+    ) -> StageDraftRef:
+        """Persist a draft version; raises LookupError for unknown refs."""
 
 
 class AssetLibraryPort(ABC):
@@ -86,6 +120,15 @@ class RunStore(ABC):
 
     @abstractmethod
     def mark_failed(self, run_id: int, error: str) -> None: ...
+
+    @abstractmethod
+    def list_runs(
+        self, status: str | None = None, limit: int = 50
+    ) -> list[RunRecord]: ...
+
+    @abstractmethod
+    def get_run(self, run_id: int) -> RunRecord:
+        """Fetch one run; raises LookupError when missing."""
 
 
 class ContentStore(ABC):

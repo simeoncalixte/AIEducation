@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { expect, within } from "@storybook/test";
+import { expect, userEvent, within } from "@storybook/test";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { AppRoutes } from "../App";
@@ -82,6 +82,99 @@ export const EmptyDebrief: Story = {
     ).toBeInTheDocument();
     expect(
       main.getByRole("button", { name: "Retry lesson" }),
+    ).toBeInTheDocument();
+    await logout(canvas);
+  },
+};
+
+/** Resolve a seeded queue row id through the live API. */
+async function queueId(
+  kind: "asset" | "stage" | "lesson",
+  match: (row: { title: string; status: string; version_no: number }) => boolean,
+): Promise<number> {
+  const { queues } = await api.review();
+  const row = queues[kind].find(match);
+  expect(row).toBeDefined();
+  return row?.id ?? 0;
+}
+
+/** Approve + publish one draft through the live API. */
+async function ship(
+  kind: "asset" | "stage" | "lesson",
+  versionId: number,
+): Promise<void> {
+  await api.approve(kind, versionId, "spike proof");
+  await api.publish(kind, versionId, "spike proof");
+}
+
+/**
+ * Answering in the scene issues verdicts on the debrief (SCRUM-23).
+ * Telemetry round-trip made visible: the answer posts events, the
+ * evaluator issues goal verdicts, the results page renders them.
+ */
+export const AnsweredRoundTrip: Story = {
+  args: { route: "/home" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await ensureLoggedOut(canvas);
+    await loginAs(canvas, "tess");
+    await canvas.findByText("Welcome, Tess");
+    await ship(
+      "asset",
+      await queueId("asset", (row) =>
+        row.title.includes("Volcano Model") && row.status === "draft",
+      ),
+    );
+    await ship(
+      "asset",
+      await queueId("asset", (row) =>
+        row.title.includes("Label the Parts") && row.status === "draft",
+      ),
+    );
+    await ship(
+      "stage",
+      await queueId("stage", (row) =>
+        row.title.includes("Eruption") && row.status === "draft",
+      ),
+    );
+    await ship(
+      "lesson",
+      await queueId(
+        "lesson",
+        (row) =>
+          row.title.includes("Volcanoes") &&
+          row.status === "draft" &&
+          row.version_no === 3,
+      ),
+    );
+    const id = await volcanoesAssignmentId();
+    await logout(canvas);
+    await loginAs(canvas, "sam");
+    await canvas.findByText("My assignments");
+    const { attempt_id } = await api.startAttempt(id);
+    expect(testNavigate).not.toBeNull();
+    testNavigate?.(`/play/attempt/${attempt_id}/challenge/1`);
+    await canvas.findByText("Challenge 1 of 1");
+    const challenge = within(canvas.getByRole("main"));
+    await userEvent.click(challenge.getByRole("checkbox", { name: "crater" }));
+    await userEvent.type(
+      challenge.getByLabelText("Note (optional)"),
+      "Spike answer.",
+    );
+    await userEvent.click(
+      challenge.getByRole("button", { name: "See results" }),
+    );
+    await canvas.findByText("Goal verdicts");
+    const main = within(canvas.getByRole("main"));
+    const craterRow = main.getByText("crater").closest("tr");
+    expect(craterRow).not.toBeNull();
+    expect(
+      within(craterRow as HTMLElement).getByText("pass"),
+    ).toBeInTheDocument();
+    const ventRow = main.getByText("vent").closest("tr");
+    expect(ventRow).not.toBeNull();
+    expect(
+      within(ventRow as HTMLElement).getByText("fail"),
     ).toBeInTheDocument();
     await logout(canvas);
   },

@@ -14,6 +14,7 @@ from evolvingclass_pipeline.domain import (
     DraftRef,
     GeneratedContent,
     LibraryMatch,
+    RunRecord,
     Tag,
 )
 from evolvingclass_pipeline.ports import AssetLibraryPort, RunStore
@@ -29,6 +30,11 @@ class SqlAlchemyAssetLibrary(AssetLibraryPort):
 
     def __init__(self, session_factory: Callable[[], Session]) -> None:
         self._sessions = session_factory
+
+    def actor_exists(self, user_id: int) -> bool:
+        """Composition-root helper so the API can 404 unknown authors."""
+        with self._sessions() as session:
+            return session.get(db.AppUser, user_id) is not None
 
     def find_candidates(
         self,
@@ -192,3 +198,40 @@ class SqlAlchemyRunStore(RunStore):
                 if run is None:
                     raise LookupError(f"run {run_id} not found")
                 run.status = status
+
+    def list_runs(
+        self, status: str | None = None, limit: int = 50
+    ) -> list[RunRecord]:
+        with self._sessions() as session:
+            query = session.query(db.GenerationRun)
+            if status is not None:
+                query = query.filter(
+                    db.GenerationRun.status == db.GenerationStatus(status)
+                )
+            rows = (
+                query.order_by(db.GenerationRun.id.desc())
+                .limit(max(1, limit))
+                .all()
+            )
+            return [self._record(row) for row in rows]
+
+    def get_run(self, run_id: int) -> RunRecord:
+        with self._sessions() as session:
+            row = session.get(db.GenerationRun, run_id)
+            if row is None:
+                raise LookupError(f"run {run_id} not found")
+            return self._record(row)
+
+    @staticmethod
+    def _record(row: db.GenerationRun) -> RunRecord:
+        return RunRecord(
+            id=row.id,
+            agent_ref=row.agent_ref,
+            model_ref=row.model_ref,
+            prompt_ref=row.prompt_ref,
+            status=row.status.value,
+            attempts=row.attempts or 0,
+            last_error=row.last_error,
+            params=dict(row.params or {}),
+            policy_version=row.policy_version or "",
+        )

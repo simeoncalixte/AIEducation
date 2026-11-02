@@ -17,6 +17,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { LogoutPage } from "./pages/LogoutPage";
 import { ReviewDossierPage } from "./pages/ReviewDossierPage";
 import { ReviewQueuesPage } from "./pages/ReviewQueuesPage";
+import { XRFixturePage } from "./pages/XRFixturePage";
 import { SessionProvider, useSession } from "./session";
 
 /** Root path (mirrors /): logged out goes to login, else home. */
@@ -29,9 +30,9 @@ function IndexRoute() {
 }
 
 /**
- * Client routes for every current Flask page path. Migrated pages
- * render their React implementation; the rest render a placeholder
- * linking to the live Flask route until their page task ships.
+ * Client routes for every current Flask page path, plus the XR
+ * spike fixture (no Flask counterpart: the pilot device opens it
+ * directly).
  */
 export function AppRoutes() {
   return (
@@ -78,6 +79,7 @@ export function AppRoutes() {
           element={<AssignmentProgressPage />}
         />
         <Route path="/audit" element={<AuditPage />} />
+        <Route path="/xr-fixture" element={<XRFixturePage />} />
         <Route
           path="*"
           element={

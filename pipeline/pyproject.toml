@@ -5,6 +5,7 @@ description = "Asset generation pipeline: explicit agent, pipeline, and adapter 
 requires-python = ">=3.11"
 dependencies = [
     "sqlalchemy>=2.0",
+    "flask>=3.0",
 ]
 
 [build-system]

@@ -12,6 +12,22 @@ services:
     ports:
       - "5001:5001"
 
+  generation:
+    build:
+      context: .
+      dockerfile: Dockerfile.generation
+    container_name: evolvingclass-generation
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "5002:5002"
+    volumes:
+      - generation-data:/var/lib/generation
+
   postgres:
     image: postgres:17
     container_name: evolvingclass-postgres
@@ -32,3 +48,4 @@ services:
 
 volumes:
   postgres-data:
+  generation-data:

@@ -45,3 +45,33 @@ button.danger { background: #8c1f1f; color: #fff; border: 1px solid #8c1f1f; }
 .error { background: #fdf0f0; border: 1px solid #e5b0b0; padding: 1rem 1.2rem;
          margin: 0.6rem 0; }
 .loading { color: #666; font-style: italic; }
+/* XR spike fixture (SCRUM-22): dark viewport with overlay HUD. */
+.xr-stage { position: relative; height: min(66vh, 620px); min-height: 420px;
+            background: #101418; border-radius: 4px; overflow: hidden; }
+.xr-stage canvas { display: block; }
+.xr-canvas { position: absolute; inset: 0; }
+.xr-canvas canvas { width: 100%; height: 100%; }
+.xr-poster { position: absolute; inset: 0; width: 100%; height: 100%;
+             object-fit: cover; transition: opacity .4s ease; }
+.xr-poster.gone { opacity: 0; pointer-events: none; }
+.xr-hud { position: absolute; z-index: 2; background: rgba(12, 16, 20, .78);
+          border: 1px solid #2c353d; border-radius: 8px; padding: .6rem .8rem;
+          color: #eee; font-size: .85rem; }
+.xr-hud h1 { font-size: 1rem; margin: 0 0 .2rem; color: #fff; }
+.xr-hud p { margin: .1rem 0; font-variant-numeric: tabular-nums; }
+.xr-hud-title { top: .7rem; left: .7rem; max-width: min(92%, 24rem); }
+.xr-hud-caps { left: .7rem; bottom: .7rem; max-width: min(92%, 24rem);
+               max-height: 38%; overflow: auto; }
+.xr-hud-caps table { font-size: .8rem; }
+.xr-hud-caps td { border: none; padding: .05rem .4rem .05rem 0; color: #eee; }
+.xr-hud-caps td:first-child { color: #9fb2c3; white-space: nowrap; }
+.xr-ar { position: absolute; z-index: 2; right: .9rem; bottom: .9rem;
+         font-weight: 700; padding: .7rem 1.2rem; border-radius: 10px;
+         border: 1px solid #3f6f4f; background: #2c5c3f; color: #fff; }
+.xr-ar:disabled { background: #333a40; border-color: #2c353d; color: #9aa4ac; }
+@media (max-width: 640px) {
+  .xr-hud { font-size: .75rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xr-poster { transition: none; }
+}
