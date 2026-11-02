@@ -86,6 +86,72 @@ class ProposalResult:
 
 
 @dataclass(frozen=True)
+class StageAssemblyRequest:
+    """Template stage assembly input (SCRUM-197)."""
+
+    title: str
+    lesson_id: int
+    objectives: tuple[str, ...] = ()
+    asset_version_ids: tuple[int, ...] = ()
+    directives: tuple[DirectiveInput, ...] = ()
+    parameters: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StageUse:
+    """One pinned asset placement inside an assembled stage."""
+
+    asset_version_id: int
+    role: str
+    position: int
+    param_overrides: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StageAssembly:
+    """Deterministic template assembly output."""
+
+    title: str
+    lesson_id: int
+    objectives: tuple[str, ...]
+    uses: tuple[StageUse, ...]
+    rationale: str
+
+
+@dataclass(frozen=True)
+class StageDraftRef:
+    """Pointer to a persisted stage draft."""
+
+    stage_id: int
+    version_id: int
+    version_no: int
+
+
+@dataclass(frozen=True)
+class StageProposalResult:
+    reused: bool
+    stage_id: int
+    version_id: int
+    version_no: int
+    run_id: int
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    """Generation-run read model for run tracking (SCRUM-8 API)."""
+
+    id: int
+    agent_ref: str
+    model_ref: str
+    prompt_ref: str
+    status: str
+    attempts: int
+    last_error: str | None
+    params: Mapping[str, Any]
+    policy_version: str
+
+
+@dataclass(frozen=True)
 class PreviewRequest:
     asset_id: int
     version_id: int

@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as _dt
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from DataModels import (
     AppUser,
@@ -24,6 +25,8 @@ from DataModels import (
     Membership,
     MembershipStatus,
     Rating,
+    SessionCheckpoint,
+    StageVersion,
     UserRole,
 )
 
@@ -123,6 +126,137 @@ def start_attempt(
         assert attempt.id is not None
         _pin_stages(session, attempt.id, version.id)
         return attempt.id
+
+
+def record_client_event(
+    make_session: SessionFactory,
+    attempt_id: int,
+    student_id: int,
+    client_event_id: str,
+    verb: str,
+    object_type: str = "",
+    object_ref: str = "",
+    payload: dict | None = None,
+) -> tuple[int, bool]:
+    """Record one client telemetry event, idempotently.
+
+    Returns the event id plus whether it already existed. Late events
+    on finished attempts are kept (offline clients sync after close);
+    they do not re-open the attempt or re-issue verdicts.
+    """
+    if not client_event_id.strip():
+        raise PublicationError(
+            INVALID_PLAY, "An event needs a client event id.")
+    if not verb.strip():
+        raise PublicationError(INVALID_PLAY, "An event needs a verb.")
+    with make_session() as session:
+        _require_owner(session, attempt_id, student_id)
+        exists = session.scalar(
+            select(ExperienceEvent.id).where(
+                ExperienceEvent.attempt_id == attempt_id,
+                ExperienceEvent.client_event_id == client_event_id,
+            ))
+        if exists is not None:
+            return exists, True
+    try:
+        with make_session() as session, session.begin():
+            sequence_no = (session.scalar(
+                select(func.max(ExperienceEvent.sequence_no)).where(
+                    ExperienceEvent.attempt_id == attempt_id)
+            ) or 0) + 1
+            event = ExperienceEvent(
+                attempt_id=attempt_id,
+                client_event_id=client_event_id,
+                sequence_no=sequence_no,
+                origin=EventOrigin.client,
+                actor_id=student_id,
+                verb=verb.strip(),
+                object_type=object_type,
+                object_ref=object_ref,
+                payload=dict(payload or {}),
+            )
+            session.add(event)
+            session.flush()
+            assert event.id is not None
+            return event.id, False
+    except IntegrityError:
+        # Lost a concurrent insert race on the idempotency key: the
+        # winner's row is the answer.
+        with make_session() as session:
+            winner = session.scalar(
+                select(ExperienceEvent.id).where(
+                    ExperienceEvent.attempt_id == attempt_id,
+                    ExperienceEvent.client_event_id == client_event_id,
+                ))
+            if winner is None:  # pragma: no cover - defensive
+                raise
+            return winner, True
+
+
+def save_checkpoint(
+    make_session: SessionFactory,
+    attempt_id: int,
+    student_id: int,
+    stage_version_id: int,
+    state: dict,
+) -> tuple[int, int]:
+    """Snapshot scene/progress state; returns (checkpoint id, sequence).
+
+    The stage version must be pinned to the attempt, and sequences are
+    monotonic per attempt. State carries renderer + schema_version for
+    future web/immersive conversion; it is stored opaquely.
+    """
+    if not isinstance(state, dict):
+        raise PublicationError(
+            INVALID_PLAY, "Checkpoint state must be an object.")
+    with make_session() as session, session.begin():
+        attempt = _require_owner(session, attempt_id, student_id)
+        pinned = {pin.stage_version_id for pin in attempt.pins}
+        if stage_version_id not in pinned:
+            known = session.get(StageVersion, stage_version_id)
+            if known is None:
+                raise PublicationError(
+                    NOT_FOUND,
+                    f"Unknown stage version {stage_version_id}.")
+            raise PublicationError(
+                INVALID_PLAY,
+                "That stage version is not pinned to this attempt.")
+        sequence_no = (session.scalar(
+            select(func.max(SessionCheckpoint.checkpoint_sequence)).where(
+                SessionCheckpoint.attempt_id == attempt_id)
+        ) or 0) + 1
+        checkpoint = SessionCheckpoint(
+            attempt_id=attempt_id, stage_version_id=stage_version_id,
+            checkpoint_sequence=sequence_no, state=dict(state),
+        )
+        session.add(checkpoint)
+        session.flush()
+        assert checkpoint.id is not None
+        return checkpoint.id, sequence_no
+
+
+def latest_checkpoint(
+    make_session: SessionFactory,
+    attempt_id: int,
+    student_id: int,
+) -> dict | None:
+    """Newest checkpoint snapshot for resume, or None when absent."""
+    with make_session() as session:
+        _require_owner(session, attempt_id, student_id)
+        row = session.scalar(
+            select(SessionCheckpoint)
+            .where(SessionCheckpoint.attempt_id == attempt_id)
+            .order_by(SessionCheckpoint.checkpoint_sequence.desc())
+            .limit(1)
+        )
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "stage_version_id": row.stage_version_id,
+            "checkpoint_sequence": row.checkpoint_sequence,
+            "state": dict(row.state),
+        }
 
 
 def answer_challenge(

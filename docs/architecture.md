@@ -140,6 +140,14 @@ Every output is a proposal: a draft version plus rationale and objective mapping
 no separate proposal table. Nothing in this plane writes live state; all
 proposals go through approvals.
 
+**Deployment and test isolation (decision).** The generation layer is its
+own application, separate from the web/service app: it connects to the
+same database but runs, deploys, and tests independently. Agent
+backends stay behind the `GenerationBackend` port so unit tests run
+with deterministic template backends and file-backed stores — no model
+credentials, no live services. Only the storage adapters may touch a
+database, and their tests use throwaway SQLite files.
+
 ### 3. Python service (API + approvals + assignments + goals evaluator)
 
 One deployable service in pilot:

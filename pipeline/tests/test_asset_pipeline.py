@@ -18,6 +18,7 @@ from evolvingclass_pipeline.domain import (
     LibraryMatch,
     PolicyViolation,
     PreviewResult,
+    RunRecord,
     Tag,
 )
 from evolvingclass_pipeline.policy import ContentPolicy
@@ -84,10 +85,16 @@ class FakePreviews(PreviewPort):
 class FakeRuns(RunStore):
     def __init__(self):
         self.events = []
+        self.records = {}
 
     def begin_run(self, agent_ref, model_ref, prompt_ref, params,
                   policy_version):
         self.events.append(("begin", agent_ref, model_ref))
+        self.records[42] = RunRecord(
+            id=42, agent_ref=agent_ref, model_ref=model_ref,
+            prompt_ref=prompt_ref, status="queued", attempts=0,
+            last_error=None, params=dict(params),
+            policy_version=policy_version)
         return 42
 
     def mark_running(self, run_id):
@@ -98,6 +105,18 @@ class FakeRuns(RunStore):
 
     def mark_failed(self, run_id, error):
         self.events.append(("failed", run_id, error))
+
+    def list_runs(self, status=None, limit=50):
+        rows = list(self.records.values())
+        if status is not None:
+            rows = [r for r in rows if r.status == status]
+        return rows[:limit]
+
+    def get_run(self, run_id):
+        try:
+            return self.records[run_id]
+        except KeyError:
+            raise LookupError(f"run {run_id} not found")
 
 
 class FakeStore(ContentStore):

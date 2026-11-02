@@ -37,9 +37,50 @@ Dependency rules (enforced by review, see ticket T3):
 
 ```sh
 cd pipeline
-PYTHONPATH=/Users/simeon/Projects/EvolvingClass/database \
-  ../database/.venv/bin/python -m unittest discover tests
+PYTHONPATH=../database:. ../database/.venv/bin/python -m unittest discover -s tests
 ```
 
 (`DataModels` resolves via `PYTHONPATH` until service packaging unifies the
 repo into one `src` layout.)
+
+## Generation API service (`app.py`)
+
+Composition root that wires the real adapters behind a Flask JSON API so
+other applications can use generation without importing the pipeline.
+Internal pilot service, no auth.
+
+| Endpoint | Behavior |
+|---|---|
+| `GET /api/health` | Liveness probe |
+| `POST /api/generate/asset` | Run the library-first proposal flow; records the run |
+| `POST /api/generate/stage` | Template stage assembly: new stage draft with pinned asset uses; records the run (model-backed authoring stays with SCRUM-30 to SCRUM-34) |
+| `POST /api/generate/lesson` | Brief-to-draft composition via `service.submit_brief`; records the run |
+| `GET /api/runs[?status=&limit=]` | Run tracking, newest first |
+| `GET /api/runs/<id>` | One run, or 404 |
+
+Request shape for asset proposals:
+
+```json
+{
+  "kind": "text",
+  "title": "Gravity",
+  "objectives": ["falling bodies"],
+  "tags": [{"taxonomy": "subject", "value": "physics"}],
+  "directives": [{"id": 11, "kind": "brief", "focus": "intro",
+                  "constraints": {}, "priority": 1}],
+  "parameters": {},
+  "created_by_id": 1
+}
+```
+
+Run it (from the repository root):
+
+```sh
+PYTHONPATH=database:pipeline:service PORT=5002 \
+  service/.venv/bin/python -m evolvingclass_pipeline.app
+```
+
+Environment: `DATABASE_URL` (default `pipeline/dev.db`), `CONTENT_ROOT`
+and `PREVIEW_ROOT` (default `./var/content`, `./var/previews`), `HOST`
+(default `127.0.0.1`), `PORT` (default `5002`). Or `docker compose up
+generation` for the container on :5002.
