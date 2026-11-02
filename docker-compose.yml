@@ -1,4 +1,17 @@
 services:
+  app:
+    build: .
+    container_name: evolvingclass-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FLASK_SECRET: ${FLASK_SECRET:-dev-review-secret}
+    ports:
+      - "5001:5001"
+
   generation:
     build:
       context: .
