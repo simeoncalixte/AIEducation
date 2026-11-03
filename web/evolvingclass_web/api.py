@@ -39,7 +39,10 @@ from evolvingclass_service import (
     record_approval,
     record_client_event,
     save_checkpoint,
+    record_teacher_evaluation,
     record_verdict_override,
+    update_lesson_composition,
+    update_stage_uses,
     retire_asset_version,
     retire_lesson_version,
     retire_stage_version,
@@ -605,6 +608,28 @@ def register_api(app: Flask, db, current_user) -> None:
         return jsonify({"message": "Flag recorded.",
                         "progress": _progress_for_attempt(attempt_id)})
 
+    @app.route("/api/attempts/<int:attempt_id>/teacher-evaluations",
+               methods=["POST"], endpoint="api_teacher_evaluation")
+    def api_teacher_evaluation(attempt_id: int):
+        _, denied = _staff()
+        if denied is not None:
+            return denied
+        payload = _payload()
+        try:
+            event_id = record_teacher_evaluation(
+                app.config["make_session"], attempt_id,
+                payload.get("goal_id"), _actor_id(),
+                payload.get("passed"),
+                rationale=payload.get("rationale") or "",
+            )
+        except PublicationError as exc:
+            status = {"not_found": 404, "forbidden": 403}.get(exc.code, 400)
+            return jsonify(
+                {"error": f"Evaluation rejected ({exc.code}): {exc}",
+                 "code": exc.code}), status
+        return jsonify({"message": "Evaluation recorded.",
+                        "event_id": event_id})
+
     @app.route("/api/lessons/<int:lesson_id>/brief", methods=["GET"],
                endpoint="api_brief_context")
     def api_brief_context(lesson_id: int):
@@ -964,10 +989,24 @@ def register_api(app: Flask, db, current_user) -> None:
         payload = _payload()
         content_ref = (payload.get("content_ref") or None
                        if kind == "asset" else None)
-        return _run("Edit", kind, version_id, lambda: update_draft(
-            app.config["make_session"], kind, version_id, _actor_id(),
-            rationale=payload.get("rationale"),
-            content_ref=content_ref))
+        uses = payload.get("uses") if kind == "stage" else None
+        pins = payload.get("pins") if kind == "lesson" else None
+
+        def _edit():
+            make = app.config["make_session"]
+            actor = _actor_id()
+            # Structure first: its guards subsume the rationale
+            # write's, so a rejection leaves nothing half-applied.
+            if uses is not None:
+                update_stage_uses(make, version_id, actor, uses)
+            if pins is not None:
+                update_lesson_composition(make, version_id, actor, pins)
+            update_draft(
+                make, kind, version_id, actor,
+                rationale=payload.get("rationale"),
+                content_ref=content_ref)
+
+        return _run("Edit", kind, version_id, _edit)
 
     @app.route("/api/review/<kind>/<int:version_id>/publish",
                methods=["POST"], endpoint="api_review_publish")

@@ -40,6 +40,7 @@ from evolvingclass_service import (  # noqa: E402
     PublicationError,
     ensure_draft,
     publish_asset_version,
+    record_approval,
     publish_lesson_version,
     publish_stage_version,
     resolve_current_lesson_version,
@@ -256,6 +257,18 @@ class PublicationTestCase(unittest.TestCase):
             session.add(Goal(challenge_version_id=vid, key="g1", rule={},
                              evaluation=GoalEvaluation.deterministic,
                              template_ref="t"))
+        result = publish_asset_version(self.make_session, vid,
+                                       self.teacher_id, "go")
+        self.assertEqual(result.status, "published")
+
+    def test_character_draft_reviews_and_publishes_like_any_asset(self):
+        with self.make_session() as session, session.begin():
+            version = self._asset_version(session, kind=AssetKind.character)
+            vid = version.id
+        approval_id = record_approval(
+            self.make_session, "asset", vid, self.teacher_id,
+            Decision.approved, "Guide voice fits the lesson.")
+        self.assertTrue(approval_id)
         result = publish_asset_version(self.make_session, vid,
                                        self.teacher_id, "go")
         self.assertEqual(result.status, "published")

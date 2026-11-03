@@ -428,6 +428,103 @@ export function ReviewDossierPage() {
               )}
             </tbody>
           </table>
+          <h2>Challenge goals</h2>
+          {dossier.goals.length > 0 ? (
+            dossier.goals.map((c) => (
+              <div key={`goals-${c.challenge_version_id}`}>
+                <h3>
+                  {c.challenge} · v{c.version_no}
+                </h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Goal</th>
+                      <th>Graded by</th>
+                      <th>Rule / rubric</th>
+                      <th>Mental models</th>
+                      <th>Probes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {c.goals.map((g) => (
+                      <tr key={g.key}>
+                        <td>{g.key}</td>
+                        <td>{g.evaluation}</td>
+                        <td>
+                          {JSON.stringify(
+                            g.evaluation === "teacher" ? g.rubric : g.rule,
+                          )}
+                        </td>
+                        <td>{g.models.join("; ")}</td>
+                        <td>{g.probes.join("; ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))
+          ) : (
+            <p className="muted">No challenge goals in this stage yet.</p>
+          )}
+          <h2>Lesson context</h2>
+          {dossier.lessons.length > 0 ? (
+            dossier.lessons.map((lesson) => (
+              <div key={`lesson-${lesson.lesson_version_id}`}>
+                <h3>
+                  {lesson.lesson} · v{lesson.version_no} ({lesson.scope},{" "}
+                  {lesson.status})
+                </h3>
+                <p className="muted">
+                  Pinned at position {lesson.position}
+                  {lesson.required ? "" : " (optional)"}.{" "}
+                  <Link
+                    to={`/review/lesson/${lesson.lesson_version_id}`}
+                  >
+                    Open lesson
+                  </Link>
+                </p>
+                <h4>Mental models</h4>
+                {lesson.models.length > 0 ? (
+                  <ul>
+                    {lesson.models.map((model) => (
+                      <li key={model}>{model}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted">No mental models defined.</p>
+                )}
+                <h4>Composition</h4>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Stage</th>
+                      <th>Ver</th>
+                      <th>Status</th>
+                      <th>Required</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lesson.composition.map((c) => (
+                      <tr key={`${c.stage_version_id}-${c.position}`}>
+                        <td>{c.position}</td>
+                        <td>{c.stage}</td>
+                        <td>v{c.version_no}</td>
+                        <td>
+                          <span className={`pill ${c.status}`}>
+                            {c.status}
+                          </span>
+                        </td>
+                        <td>{c.required ? "yes" : "no"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))
+          ) : (
+            <p className="muted">No lesson pins this stage yet.</p>
+          )}
         </>
       )}
 

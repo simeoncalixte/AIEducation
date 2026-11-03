@@ -127,10 +127,23 @@ export interface PreviewRow {
 export interface AssetUseRow {
   asset: string;
   kind: string;
+  asset_version_id: number;
   version_no: number;
   status: string;
   role: string;
   mastery: string;
+  param_overrides: Record<string, unknown>;
+}
+
+export interface EditUseInput {
+  asset_version_id: number;
+  role: string;
+  param_overrides?: Record<string, unknown>;
+}
+
+export interface EditPinInput {
+  stage_version_id: number;
+  required: boolean;
 }
 
 export interface CompositionRow {
@@ -141,6 +154,35 @@ export interface CompositionRow {
   status: string;
   required: boolean;
   uses: number;
+}
+
+export interface DossierGoal {
+  key: string;
+  evaluation: string;
+  template_ref: string;
+  rule: Record<string, unknown>;
+  rubric: Record<string, unknown> | null;
+  models: string[];
+  probes: string[];
+}
+
+export interface DossierChallengeGoals {
+  challenge: string;
+  challenge_version_id: number;
+  version_no: number;
+  goals: DossierGoal[];
+}
+
+export interface DossierLessonContext {
+  lesson: string;
+  lesson_version_id: number;
+  version_no: number;
+  status: string;
+  scope: string;
+  position: number;
+  required: boolean;
+  models: string[];
+  composition: CompositionRow[];
 }
 
 export interface ApprovalEntry {
@@ -176,6 +218,8 @@ export interface Dossier {
   low_impact: boolean;
   uses: AssetUseRow[];
   composition: CompositionRow[];
+  goals: DossierChallengeGoals[];
+  lessons: DossierLessonContext[];
   content_ref?: string;
 }
 
@@ -384,6 +428,11 @@ export interface ChallengeGoal {
   answered: boolean;
 }
 
+export interface ChallengeGuide {
+  name: string;
+  role: string;
+}
+
 export interface Challenge {
   attempt_id: number;
   assignment_id: number;
@@ -393,6 +442,7 @@ export interface Challenge {
   title: string;
   challenge_version_id: number;
   goals: ChallengeGoal[];
+  guides: ChallengeGuide[];
   finished: boolean;
   preview: boolean;
 }
@@ -557,7 +607,12 @@ export const api = {
   editDraft: (
     kind: string,
     versionId: number,
-    payload: { rationale: string; content_ref?: string },
+    payload: {
+      rationale: string;
+      content_ref?: string;
+      uses?: EditUseInput[];
+      pins?: EditPinInput[];
+    },
   ) =>
     apiFetch<ActionResult>(`/api/review/${kind}/${versionId}/edit`, {
       method: "POST",

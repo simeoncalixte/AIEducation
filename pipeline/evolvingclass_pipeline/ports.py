@@ -56,6 +56,10 @@ class StageLibraryPort(ABC):
     """Stage draft persistence."""
 
     @abstractmethod
+    def manager_guide_version_id(self) -> int | None:
+        """Latest published Manager guide version, if one exists."""
+
+    @abstractmethod
     def save_stage_draft(
         self,
         assembly: StageAssembly,
@@ -63,7 +67,12 @@ class StageLibraryPort(ABC):
         created_by_id: int,
         run_id: int,
     ) -> StageDraftRef:
-        """Persist a draft version; raises LookupError for unknown refs."""
+        """Persist a draft version; raises LookupError for unknown refs.
+
+        When the assembly names a lesson version, the draft is
+        appended to that version's composition; callers must pass a
+        draft lesson version, since published rows are frozen.
+        """
 
 
 class AssetLibraryPort(ABC):

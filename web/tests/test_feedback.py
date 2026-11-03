@@ -153,5 +153,102 @@ class FeedbackRouteTestCase(unittest.TestCase):
                 data={"note": "x"}).status_code, 403)
 
 
+class TeacherEvaluationApiTestCase(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        self._tmp = tmp.name
+        self.url = f"sqlite:///{tmp.name}"
+        self.ids = seed(self.url)
+        self.app = create_app(self.url)
+        self.app.config["TESTING"] = True
+        self.client = self.app.test_client()
+        self.client.post("/api/login", json={"login_ref": "tess"})
+        engine = create_engine(self.url)
+        factory = sessionmaker(bind=engine)
+        with factory() as session, session.begin():
+            room_id = session.scalar(select(m.Classroom.id))
+            assignment = m.Assignment(
+                lesson_id=self.ids["lesson_id"], classroom_id=room_id,
+                assigned_by_id=self.ids["teacher_id"])
+            session.add(assignment)
+            session.flush()
+            attempt = m.Attempt(
+                assignment_id=assignment.id,
+                student_id=self.ids["student_id"],
+                pinned_lesson_version_id=self.ids["lesson_draft_id"])
+            session.add(attempt)
+            session.flush()
+            goal = m.Goal(
+                challenge_version_id=self.ids["challenge_draft_id"],
+                key="explain", rule={},
+                evaluation=m.GoalEvaluation.teacher,
+                rubric={"criteria": ["names magma"]},
+                template_ref="t")
+            session.add(goal)
+            session.flush()
+            self.attempt_id = attempt.id
+            self.goal_id = goal.id
+        engine.dispose()
+
+    def tearDown(self):
+        os.unlink(self._tmp)
+
+    def _evaluations(self):
+        engine = create_engine(self.url)
+        factory = sessionmaker(bind=engine)
+        try:
+            with factory() as session:
+                rows = list(session.scalars(
+                    select(m.ExperienceEvent).where(
+                        m.ExperienceEvent.attempt_id == self.attempt_id,
+                        m.ExperienceEvent.verb == "teacher-evaluation",
+                    )))
+                for row in rows:
+                    session.expunge(row)
+                return rows
+        finally:
+            engine.dispose()
+
+    def test_evaluation_records_teacher_event(self):
+        resp = self.client.post(
+            f"/api/attempts/{self.attempt_id}/teacher-evaluations",
+            json={"goal_id": self.goal_id, "passed": True,
+                  "rationale": "Names magma."})
+        self.assertEqual(resp.status_code, 200)
+        rows = self._evaluations()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].goal_id, self.goal_id)
+        self.assertEqual(rows[0].actor_id, self.ids["teacher_id"])
+        self.assertTrue(rows[0].payload["passed"])
+
+    def test_seed_goals_probe_lesson_models(self):
+        engine = create_engine(self.url)
+        factory = sessionmaker(bind=engine)
+        try:
+            with factory() as session:
+                goal = session.scalar(
+                    select(m.Goal).where(m.Goal.key == "crater"))
+                self.assertTrue(goal.mental_models)
+                self.assertTrue(goal.probed_misconceptions)
+        finally:
+            engine.dispose()
+
+    def test_evaluation_guards(self):
+        resp = self.client.post(
+            f"/api/attempts/{self.attempt_id}/teacher-evaluations",
+            json={"goal_id": 9999, "passed": True})
+        self.assertEqual(resp.status_code, 404)
+        resp = self.client.post(
+            f"/api/attempts/{self.attempt_id}/teacher-evaluations",
+            json={"goal_id": self.goal_id, "passed": "pass"})
+        self.assertEqual(resp.status_code, 400)
+        self.client.post("/api/login", json={"login_ref": "sam"})
+        resp = self.client.post(
+            f"/api/attempts/{self.attempt_id}/teacher-evaluations",
+            json={"goal_id": self.goal_id, "passed": True})
+        self.assertEqual(resp.status_code, 403)
+
+
 if __name__ == "__main__":
     unittest.main()

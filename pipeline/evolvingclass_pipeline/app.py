@@ -211,13 +211,15 @@ def create_app(
         FilesystemContentStore(content_dir),
         policy=ContentPolicy(),
     )
+    stage_library = SqlAlchemyStageLibrary(sessions)
     stages = StagePipeline(
-        SqlAlchemyStageLibrary(sessions), TemplateStageBackend(), runs
+        stage_library, TemplateStageBackend(), runs
     )
 
     app = Flask(__name__)
     app.config["runs"] = runs
     app.config["library"] = library
+    app.config["stage_library"] = stage_library
 
     @app.route("/api/health", methods=["GET"])
     def health():
@@ -293,14 +295,34 @@ def create_app(
         if not isinstance(parameters, dict):
             return _err("'parameters' must be an object.",
                         400, "invalid_request")
+        raw_lesson_version = body.get("lesson_version_id")
+        try:
+            lesson_version_id = (
+                None if raw_lesson_version is None
+                else int(raw_lesson_version)
+            )
+        except (TypeError, ValueError):
+            return _err("'lesson_version_id' must be an integer or null.",
+                        400, "invalid_request")
         if not library.actor_exists(created_by_id):
             return _err("Unknown actor.", 404, "unknown_actor")
+        if lesson_version_id is not None:
+            status = stage_library.lesson_version_status(
+                lesson_version_id)
+            if status is None:
+                return _err(
+                    f"Unknown lesson version {lesson_version_id}.", 404)
+            if status != "draft":
+                return _err(
+                    f"Lesson version {lesson_version_id} is {status}, "
+                    "not a draft.", 400, "invalid_request")
         try:
             result = stages.propose(
                 StageAssemblyRequest(
                     title=title.strip(), lesson_id=lesson_id,
                     objectives=objectives, asset_version_ids=asset_ids,
                     directives=directives, parameters=dict(parameters),
+                    lesson_version_id=lesson_version_id,
                 ),
                 created_by_id,
             )
@@ -314,6 +336,8 @@ def create_app(
             "version_id": result.version_id,
             "version_no": result.version_no,
             "run_id": result.run_id,
+            "lesson_version_id": result.lesson_version_id,
+            "composition_position": result.composition_position,
         })
 
     @app.route("/api/generate/lesson", methods=["POST"])

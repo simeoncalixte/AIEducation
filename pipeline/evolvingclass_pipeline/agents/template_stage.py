@@ -62,6 +62,7 @@ class TemplateStageBackend(StageBackend):
             objectives=request.objectives,
             uses=uses,
             rationale=rationale,
+            lesson_version_id=request.lesson_version_id,
         )
 
     @staticmethod

@@ -49,6 +49,29 @@ class GenerationRequest:
     parameters: Mapping[str, Any] = field(default_factory=dict)
 
 
+class GoalEvaluation(str, Enum):
+    deterministic = "deterministic"
+    teacher = "teacher"
+
+
+@dataclass(frozen=True)
+class GoalSpec:
+    """One authored goal for a challenge draft (SCRUM-31/32).
+
+    Deterministic specs carry an evaluator rule shaped like the
+    challenge telemetry contract; teacher specs carry a rubric and
+    skip rule validation, mirroring the schema check.
+    """
+
+    key: str
+    rule: Mapping[str, Any]
+    evaluation: GoalEvaluation = GoalEvaluation.deterministic
+    rubric: Mapping[str, Any] | None = None
+    template_ref: str = ""
+    mental_model_ids: tuple[int, ...] = ()
+    misconception_ids: tuple[int, ...] = ()
+
+
 @dataclass(frozen=True)
 class GeneratedContent:
     kind: AssetKind
@@ -57,6 +80,7 @@ class GeneratedContent:
     tags: tuple[Tag, ...] = ()
     objective_refs: tuple[str, ...] = ()
     rationale: str = ""
+    goals: tuple[GoalSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,7 +111,12 @@ class ProposalResult:
 
 @dataclass(frozen=True)
 class StageAssemblyRequest:
-    """Template stage assembly input (SCRUM-197)."""
+    """Template stage assembly input (SCRUM-197).
+
+    ``lesson_version_id`` names a draft lesson version the new
+    stage draft is pinned into (SCRUM-30); None leaves the stage
+    unpinned.
+    """
 
     title: str
     lesson_id: int
@@ -95,6 +124,7 @@ class StageAssemblyRequest:
     asset_version_ids: tuple[int, ...] = ()
     directives: tuple[DirectiveInput, ...] = ()
     parameters: Mapping[str, Any] = field(default_factory=dict)
+    lesson_version_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +146,7 @@ class StageAssembly:
     objectives: tuple[str, ...]
     uses: tuple[StageUse, ...]
     rationale: str
+    lesson_version_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -125,6 +156,7 @@ class StageDraftRef:
     stage_id: int
     version_id: int
     version_no: int
+    composition_position: int | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +166,8 @@ class StageProposalResult:
     version_id: int
     version_no: int
     run_id: int
+    lesson_version_id: int | None = None
+    composition_position: int | None = None
 
 
 @dataclass(frozen=True)

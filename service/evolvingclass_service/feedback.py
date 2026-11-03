@@ -17,6 +17,8 @@ from DataModels import (
     Attempt,
     EventOrigin,
     ExperienceEvent,
+    Goal,
+    GoalEvaluation,
     Misconception,
     UserRole,
     VerdictOverride,
@@ -35,6 +37,8 @@ _PUBLISHERS = frozenset({UserRole.teacher, UserRole.admin})
 
 VERDICT_VERB = "goal-verdict"
 FLAG_VERB = "misconception-flagged"
+TEACHER_EVAL_VERB = "teacher-evaluation"
+TEACHER_EVALUATOR_VERSION = "teacher/v1"
 
 
 def _require_teacher_or_admin(session, actor_id: int) -> None:
@@ -146,9 +150,94 @@ def flag_misconception(
         return event.id
 
 
+def _challenge_in_attempt_composition(
+    attempt: Attempt, challenge_version_id: int
+) -> bool:
+    for link in attempt.pinned_lesson_version.composition:
+        for use in link.stage_version.asset_uses:
+            if use.asset_version_id == challenge_version_id:
+                return True
+    return False
+
+
+def record_teacher_evaluation(
+    make_session: SessionFactory,
+    attempt_id: int,
+    goal_id: int,
+    actor_id: int,
+    passed: bool,
+    rationale: str = "",
+) -> int:
+    """Grade a teacher-evaluated goal from recorded evidence.
+
+    Emits one server ``teacher-evaluation`` event per attempt goal;
+    deterministic goals and repeat grades are rejected (re-grading
+    arrives with the rubric grading view). Returns the event id.
+    """
+    if not isinstance(passed, bool):
+        raise PublicationError(
+            INVALID_FEEDBACK, "An evaluation needs a pass/fail verdict.")
+    if not isinstance(goal_id, int) or isinstance(goal_id, bool):
+        raise PublicationError(
+            INVALID_FEEDBACK, "An evaluation needs a goal id.")
+    with make_session() as session, session.begin():
+        attempt = session.get(Attempt, attempt_id)
+        if attempt is None:
+            raise PublicationError(
+                NOT_FOUND, f"Unknown attempt {attempt_id}.")
+        _require_teacher_or_admin(session, actor_id)
+        goal = session.get(Goal, goal_id)
+        if goal is None:
+            raise PublicationError(
+                NOT_FOUND, f"Unknown goal {goal_id}.")
+        if goal.evaluation is not GoalEvaluation.teacher:
+            raise PublicationError(
+                INVALID_FEEDBACK,
+                "Only teacher-graded goals take a teacher evaluation.")
+        if not _challenge_in_attempt_composition(
+                attempt, goal.challenge_version_id):
+            raise PublicationError(
+                INVALID_SCOPE,
+                "Evaluations must grade a challenge of the "
+                "attempt's lesson.")
+        graded = session.scalar(
+            select(ExperienceEvent.id).where(
+                ExperienceEvent.attempt_id == attempt_id,
+                ExperienceEvent.goal_id == goal_id,
+                ExperienceEvent.verb == TEACHER_EVAL_VERB,
+            )
+        )
+        if graded is not None:
+            raise PublicationError(
+                INVALID_FEEDBACK,
+                f"Goal {goal.key!r} is already evaluated.")
+        event = ExperienceEvent(
+            attempt_id=attempt_id,
+            client_event_id=f"teacher-eval-{goal_id}",
+            sequence_no=_next_sequence(session, attempt_id),
+            origin=EventOrigin.server,
+            actor_id=actor_id,
+            verb=TEACHER_EVAL_VERB,
+            object_type="goal",
+            object_ref=goal.key,
+            goal_id=goal.id,
+            challenge_version_id=goal.challenge_version_id,
+            evaluator_version=TEACHER_EVALUATOR_VERSION,
+            payload={"passed": passed, "goal_key": goal.key,
+                     "rationale": rationale},
+        )
+        session.add(event)
+        session.flush()
+        assert event.id is not None
+        return event.id
+
+
 __all__ = [
     "FLAG_VERB",
+    "TEACHER_EVAL_VERB",
+    "TEACHER_EVALUATOR_VERSION",
     "VERDICT_VERB",
     "flag_misconception",
+    "record_teacher_evaluation",
     "record_verdict_override",
 ]

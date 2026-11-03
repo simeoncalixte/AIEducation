@@ -31,6 +31,11 @@ pre { margin: 0; white-space: pre-wrap; font-size: 0.85rem; }
          margin-bottom: 0.8rem; }
 form.inline { display: inline; }
 form.block { margin: 0.6rem 0; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
+       border: 1px solid #ddd; padding: 0.4rem 0.6rem; margin: 0.4rem 0; }
+.row label { display: inline; margin: 0; font-weight: 400; }
+.row input[type=text] { width: auto; max-width: 12rem; }
+.row button { margin: 0; }
 label { display: block; margin: 0.5rem 0 0.2rem; font-weight: 600; }
 input[type=text], textarea { width: 100%; max-width: 640px; padding: 0.4rem;
                              font: inherit; }

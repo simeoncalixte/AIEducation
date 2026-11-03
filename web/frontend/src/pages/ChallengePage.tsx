@@ -86,6 +86,11 @@ export function ChallengePage() {
           {`Challenge ${challenge.index} of ${challenge.total}`}
         </strong>
       </p>
+      {challenge.guides.length > 0 && (
+        <p className="muted">
+          Guide: {challenge.guides.map((guide) => guide.name).join(", ")}
+        </p>
+      )}
       {flash !== null && <p className="flash">{flash}</p>}
       {challenge.finished ? (
         <EmptyState>

@@ -8,7 +8,11 @@ from .directives import (
     update_directive,
 )
 from .errors import PublicationError
-from .feedback import flag_misconception, record_verdict_override
+from .feedback import (
+    flag_misconception,
+    record_teacher_evaluation,
+    record_verdict_override,
+)
 from .goals import evaluate_attempt
 from .play import (
     answer_challenge,
@@ -34,7 +38,13 @@ from .publication import (
     rollback_lesson_version,
     rollback_stage_version,
 )
-from .review import record_approval, revise_asset_version, update_draft
+from .review import (
+    record_approval,
+    revise_asset_version,
+    update_draft,
+    update_lesson_composition,
+    update_stage_uses,
+)
 
 __all__ = [
     "BriefResult",
@@ -51,6 +61,7 @@ __all__ = [
     "latest_checkpoint",
     "rate_lesson",
     "record_client_event",
+    "record_teacher_evaluation",
     "record_verdict_override",
     "retry_attempt",
     "revise_asset_version",
@@ -60,6 +71,8 @@ __all__ = [
     "update_directive",
     "record_approval",
     "update_draft",
+    "update_lesson_composition",
+    "update_stage_uses",
     "publish_asset_version",
     "publish_lesson_version",
     "publish_stage_version",

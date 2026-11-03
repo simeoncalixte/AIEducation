@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(ROOT, "service"))
 
 import DataModels as db
 from evolvingclass_pipeline.app import create_app  # noqa: E402
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 
 
 def _payload(**overrides):
@@ -164,6 +164,110 @@ class ApiGenerateTestCase(unittest.TestCase):
         runs = self.client.get("/api/runs").get_json()["runs"]
         self.assertEqual(runs, [])
 
+    def test_challenge_proposal_persists_telemetry_goals(self):
+        resp = self._propose(kind="challenge", title="Label the Crater")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json()
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        try:
+            version = session.get(db.AssetVersion, payload["version_id"])
+            self.assertEqual(version.asset.kind, db.AssetKind.challenge)
+            goals = list(session.scalars(
+                select(db.Goal).where(
+                    db.Goal.challenge_version_id == version.id)))
+            self.assertEqual(len(goals), 1)
+            rule = dict(goals[0].rule)
+            self.assertEqual(rule["verb"], "goal-attempted")
+            self.assertEqual(goals[0].evaluation,
+                             db.GoalEvaluation.deterministic)
+            self.assertTrue(goals[0].template_ref)
+        finally:
+            session.close()
+
+    def test_character_proposal_persists_bounded_dialogue(self):
+        resp = self._propose(kind="character", title="Manager")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json()
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        try:
+            version = session.get(db.AssetVersion, payload["version_id"])
+            self.assertEqual(version.asset.kind, db.AssetKind.character)
+            self.assertEqual(version.status, db.VersionStatus.draft)
+        finally:
+            session.close()
+
+    def _seed_probe_targets(self):
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        with session.begin():
+            lesson_v = db.LessonVersion(
+                lesson_id=self.lesson_id, version_no=1,
+                status=db.VersionStatus.draft, rationale="r",
+                objective_refs=[])
+            session.add(lesson_v)
+            session.flush()
+            model = db.MentalModel(lesson_version_id=lesson_v.id,
+                                   position=1, statement="Magma rises.")
+            session.add(model)
+            session.flush()
+            misc = db.Misconception(
+                mental_model_id=model.id, description="Lava is cold.",
+                probe_notes="Ask about temperature.")
+            session.add(misc)
+            session.flush()
+            return model.id, misc.id
+
+    def test_challenge_probes_persist_model_links(self):
+        model_id, misc_id = self._seed_probe_targets()
+        resp = self._propose(
+            kind="challenge", title="Label the Crater",
+            parameters={"mental_model_ids": [model_id],
+                        "misconception_ids": [misc_id]})
+        self.assertEqual(resp.status_code, 200)
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        try:
+            goal = session.scalar(select(db.Goal).where(
+                db.Goal.challenge_version_id ==
+                resp.get_json()["version_id"]))
+            self.assertEqual([m.id for m in goal.mental_models],
+                             [model_id])
+            self.assertEqual(
+                [m.id for m in goal.probed_misconceptions], [misc_id])
+        finally:
+            session.close()
+
+    def test_challenge_unknown_probe_target_is_404(self):
+        resp = self._propose(
+            kind="challenge", title="Label the Crater",
+            parameters={"mental_model_ids": [4242]})
+        self.assertEqual(resp.status_code, 404)
+
+    def test_challenge_teacher_goals_persist_with_rubric(self):
+        resp = self._propose(
+            kind="challenge", title="Explain Eruptions",
+            parameters={"teacher_goals": [
+                {"key": "explain",
+                 "rubric": {"criteria": ["names magma"]}}]})
+        self.assertEqual(resp.status_code, 200)
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        try:
+            goals = list(session.scalars(
+                select(db.Goal)
+                .where(db.Goal.challenge_version_id ==
+                       resp.get_json()["version_id"])
+                .order_by(db.Goal.key)))
+            teacher = [g for g in goals
+                       if g.evaluation == db.GoalEvaluation.teacher]
+            self.assertEqual(len(teacher), 1)
+            self.assertEqual(dict(teacher[0].rubric),
+                             {"criteria": ["names magma"]})
+        finally:
+            session.close()
+
     def _asset_version_id(self, title):
         body = _payload(title=title)
         body["created_by_id"] = self.user_id
@@ -261,6 +365,205 @@ class ApiGenerateTestCase(unittest.TestCase):
         failed = self.client.get("/api/runs?status=failed").get_json()
         self.assertEqual(len(failed["runs"]), 2)
         self.assertIn("LookupError", failed["runs"][0]["last_error"])
+
+    def _lesson_version_id(self, status=db.VersionStatus.draft):
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        with session.begin():
+            top = session.scalar(
+                select(func.max(db.LessonVersion.version_no)).where(
+                    db.LessonVersion.lesson_id == self.lesson_id)
+            ) or 0
+            version = db.LessonVersion(
+                lesson_id=self.lesson_id, version_no=top + 1,
+                status=status, rationale="r", objective_refs=[])
+            session.add(version)
+            session.flush()
+            return version.id
+
+    def test_stage_pins_into_lesson_composition_in_order(self):
+        draft_id = self._lesson_version_id()
+        first = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(title="Eruption",
+                                  lesson_version_id=draft_id))
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.get_json()["lesson_version_id"], draft_id)
+        self.assertEqual(first.get_json()["composition_position"], 1)
+        second = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(title="Aftermath",
+                                  lesson_version_id=draft_id))
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.get_json()["composition_position"], 2)
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        try:
+            pins = list(session.scalars(
+                select(db.LessonVersionStage)
+                .where(db.LessonVersionStage.lesson_version_id ==
+                       draft_id)
+                .order_by(db.LessonVersionStage.position)))
+            self.assertEqual(
+                [(p.stage_version_id, p.position) for p in pins],
+                [(first.get_json()["version_id"], 1),
+                 (second.get_json()["version_id"], 2)])
+        finally:
+            session.close()
+
+    def test_stage_pin_rejections(self):
+        resp = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(title="T", lesson_version_id="x"))
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["code"], "invalid_request")
+        resp = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(title="T", lesson_version_id=4242))
+        self.assertEqual(resp.status_code, 404)
+        live_id = self._lesson_version_id(
+            status=db.VersionStatus.published)
+        resp = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(title="T",
+                                  lesson_version_id=live_id))
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["code"], "invalid_request")
+
+    def test_scoped_variant_accepts_composition_pins(self):
+        brief = self.client.post(
+            "/api/generate/lesson",
+            json=self._brief_body(student_id=self.student_id))
+        self.assertEqual(brief.status_code, 200)
+        variant_id = brief.get_json()["lesson_version_id"]
+        stage = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(title="Targeted",
+                                  lesson_version_id=variant_id))
+        self.assertEqual(stage.status_code, 200)
+        self.assertEqual(stage.get_json()["composition_position"], 1)
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        try:
+            variant = session.get(db.LessonVersion, variant_id)
+            self.assertEqual(variant.student_scope_id, self.student_id)
+            pins = list(session.scalars(
+                select(db.LessonVersionStage).where(
+                    db.LessonVersionStage.lesson_version_id ==
+                    variant_id)))
+            self.assertEqual(len(pins), 1)
+            self.assertEqual(pins[0].stage_version_id,
+                             stage.get_json()["version_id"])
+        finally:
+            session.close()
+
+    def _seed_manager(self, status=db.VersionStatus.published):
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        with session.begin():
+            asset = db.Asset(kind=db.AssetKind.character,
+                             title="Manager",
+                             created_by_id=self.user_id)
+            session.add(asset)
+            session.flush()
+            version = db.AssetVersion(
+                asset_id=asset.id, version_no=1, status=status,
+                rationale="Canonical guide.", objective_refs=[],
+                content_ref="content/manager-v1.json",
+                param_schema={})
+            session.add(version)
+            session.flush()
+            session.add(db.AssetTag(
+                asset_version_id=version.id,
+                taxonomy=db.TagTaxonomy.role, value="manager"))
+            session.flush()
+            return version.id
+
+    def _stage_uses(self, version_id):
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        try:
+            version = session.get(db.StageVersion, version_id)
+            return sorted(
+                ((u.asset_version_id, u.role, u.position)
+                 for u in version.asset_uses),
+                key=lambda row: row[2])
+        finally:
+            session.close()
+
+    def test_stage_assembly_auto_pins_manager_guide_first(self):
+        manager_id = self._seed_manager()
+        prop = self._asset_version_id("Backdrop Rock")
+        resp = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(asset_version_ids=[prop]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            self._stage_uses(resp.get_json()["version_id"]),
+            [(manager_id, "guide", 1), (prop, "backdrop", 2)])
+
+    def test_stage_assembly_skips_manager_when_absent(self):
+        prop = self._asset_version_id("Backdrop Rock")
+        resp = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(asset_version_ids=[prop]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            self._stage_uses(resp.get_json()["version_id"]),
+            [(prop, "backdrop", 1)])
+
+    def test_stage_assembly_skips_unpublished_manager(self):
+        self._seed_manager(status=db.VersionStatus.draft)
+        prop = self._asset_version_id("Backdrop Rock")
+        resp = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(asset_version_ids=[prop]))
+        self.assertEqual(resp.status_code, 200)
+        uses = self._stage_uses(resp.get_json()["version_id"])
+        self.assertEqual(len(uses), 1)
+
+    def test_stage_assembly_keeps_explicit_manager_use(self):
+        manager_id = self._seed_manager()
+        resp = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(
+                asset_version_ids=[manager_id],
+                parameters={"roles": {str(manager_id): "host"}}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            self._stage_uses(resp.get_json()["version_id"]),
+            [(manager_id, "host", 1)])
+
+    def test_variant_inherits_manager_guide(self):
+        self._seed_manager()
+        brief = self.client.post(
+            "/api/generate/lesson",
+            json=self._brief_body(student_id=self.student_id))
+        variant_id = brief.get_json()["lesson_version_id"]
+        stage = self.client.post(
+            "/api/generate/stage",
+            json=self._stage_body(title="Targeted",
+                                  lesson_version_id=variant_id))
+        self.assertEqual(stage.status_code, 200)
+        roles = {role for _, role, _
+                 in self._stage_uses(stage.get_json()["version_id"])}
+        self.assertIn("guide", roles)
+
+    def test_stage_without_pin_leaves_composition_empty(self):
+        resp = self.client.post(
+            "/api/generate/stage", json=self._stage_body(title="T"))
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json()
+        self.assertIsNone(payload["lesson_version_id"])
+        self.assertIsNone(payload["composition_position"])
+        sessions = db.get_session_factory(self.url)
+        session = sessions()
+        try:
+            pins = session.scalars(
+                select(db.LessonVersionStage)).all()
+            self.assertEqual(pins, [])
+        finally:
+            session.close()
 
     def test_lesson_records_draft_run_and_models(self):
         resp = self.client.post("/api/generate/lesson",
