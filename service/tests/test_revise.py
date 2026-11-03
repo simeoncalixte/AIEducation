@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "database"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
@@ -25,8 +25,11 @@ from DataModels import (  # noqa: E402
     Goal,
     GoalEvaluation,
     Lesson,
+    LessonVersion,
     Membership,
     MembershipStatus,
+    MentalModel,
+    Misconception,
     School,
     Stage,
     StageVersion,
@@ -127,6 +130,47 @@ class ReviseTestCase(unittest.TestCase):
             goals = session.get(AssetVersion, new_id).goals
             self.assertEqual([(g.key, g.template_ref) for g in goals],
                              [("g1", "t")])
+
+    def test_revise_copies_goal_probe_links(self):
+        vid = self._live_version(kind=AssetKind.challenge)
+        with self.make_session() as session, session.begin():
+            room_id = session.scalar(
+                select(Classroom.id).limit(1))
+            lesson = Lesson(school_id=self.school_id,
+                            classroom_id=room_id,
+                            subject="science", title="L")
+            session.add(lesson)
+            session.flush()
+            lesson_v = LessonVersion(
+                lesson_id=lesson.id, version_no=1,
+                status=VersionStatus.published, rationale="r",
+                objective_refs=[])
+            session.add(lesson_v)
+            session.flush()
+            model = MentalModel(lesson_version_id=lesson_v.id,
+                                position=1, statement="Magma rises.")
+            session.add(model)
+            session.flush()
+            misc = Misconception(
+                mental_model_id=model.id, description="Lava is cold.",
+                probe_notes="Ask.")
+            session.add(misc)
+            session.flush()
+            goal = session.scalar(
+                select(Goal).where(Goal.challenge_version_id == vid))
+            goal.mental_models.append(model)
+            goal.probed_misconceptions.append(misc)
+            model_id, misc_id = model.id, misc.id
+        new_id = revise_asset_version(
+            self.make_session, vid, self.teacher_id, "clearer task")
+        with self.make_session() as session:
+            goals = session.get(AssetVersion, new_id).goals
+            self.assertEqual(len(goals), 1)
+            self.assertEqual([m.id for m in goals[0].mental_models],
+                             [model_id])
+            self.assertEqual(
+                [m.id for m in goals[0].probed_misconceptions],
+                [misc_id])
 
     def test_revise_retired_version(self):
         vid = self._live_version()

@@ -193,6 +193,19 @@ def _build(session: Session, factory: sessionmaker) -> dict:
         session2.commit()
     ids["sediment_live_id"] = sediment_v1.id
 
+    # Canonical Manager guide (SCRUM-199): published and tagged so
+    # stage assembly auto-pins it with the guide role.
+    manager_v1 = add_asset(
+        "Manager", AssetKind.character, 1, "Canonical guide voice.",
+        "content/manager-v1.json",
+        snapshot(brief, brief_text="Guide character."), run.id)
+    session.add(AssetTag(asset_version_id=manager_v1.id,
+                         taxonomy=TagTaxonomy.role, value="manager"))
+    session.commit()
+    _approve(factory, "asset", manager_v1.id, teacher.id)
+    publish_asset_version(factory, manager_v1.id, teacher.id, "On voice.")
+    ids["manager_version_id"] = manager_v1.id
+
     volcano_v2 = add_asset(
         "Volcano Model", AssetKind.prop, 2,
         "Sharper crater lip; fixes the flat shading agents reported.",
@@ -255,6 +268,9 @@ def _build(session: Session, factory: sessionmaker) -> dict:
         AssetUse(asset_version_id=challenge_v1.id,
                  stage_version_id=stage_v2.id, position=2,
                  role="challenge", param_overrides={}),
+        AssetUse(asset_version_id=manager_v1.id,
+                 stage_version_id=stage_v2.id, position=3,
+                 role="guide", param_overrides={}),
     ])
     session.flush()
     ids["stage_draft_id"] = stage_v2.id
@@ -305,6 +321,22 @@ def _build(session: Session, factory: sessionmaker) -> dict:
         snapshot(brief, steer, brief_text="Volcanoes v3."))
     session.flush()
     ids["lesson_draft_id"] = lesson_v3.id
+
+    # -- goal probes ---------------------------------------------------
+    # The labeling challenge ships in v3's composition, so its goals
+    # probe v3's mental model and misconception (SCRUM-32).
+    v3_model = session.scalar(
+        select(MentalModel).where(
+            MentalModel.lesson_version_id == lesson_v3.id))
+    v3_misc = session.scalar(
+        select(Misconception).where(
+            Misconception.mental_model_id == v3_model.id))
+    for goal in session.scalars(
+            select(Goal).where(
+                Goal.challenge_version_id == challenge_v1.id)):
+        goal.mental_models.append(v3_model)
+        goal.probed_misconceptions.append(v3_misc)
+    session.flush()
     return ids
 
 

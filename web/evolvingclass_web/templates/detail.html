@@ -135,6 +135,49 @@ actions below; evidence is in the table.</span></p>
   <tr><td colspan="6" class="muted">This stage uses no assets.</td></tr>
   {% endfor %}
 </table>
+<h2>Challenge goals</h2>
+{% if d.goals %}
+{% for c in d.goals %}
+<h3>{{ c.challenge }} · v{{ c.version_no }}</h3>
+<table>
+  <tr><th>Goal</th><th>Graded by</th><th>Rule / rubric</th><th>Mental models</th><th>Probes</th></tr>
+  {% for g in c.goals %}
+  <tr><td>{{ g.key }}</td><td>{{ g.evaluation }}</td>
+      <td>{% if g.evaluation == "teacher" %}{{ g.rubric }}{% else %}{{ g.rule }}{% endif %}</td>
+      <td>{{ g.models | join("; ") }}</td><td>{{ g.probes | join("; ") }}</td></tr>
+  {% endfor %}
+</table>
+{% endfor %}
+{% else %}
+<p class="muted">No challenge goals in this stage yet.</p>
+{% endif %}
+<h2>Lesson context</h2>
+{% if d.lessons %}
+{% for lesson in d.lessons %}
+<h3>{{ lesson.lesson }} · v{{ lesson.version_no }} ({{ lesson.scope }}, {{ lesson.status }})</h3>
+<p class="muted">Pinned at position {{ lesson.position }}{% if not lesson.required %} (optional){% endif %}.
+  <a href="{{ url_for('version_detail', kind='lesson', version_id=lesson.lesson_version_id) }}">Open lesson</a></p>
+<h4>Mental models</h4>
+<ul>
+  {% for model in lesson.models %}
+  <li>{{ model }}</li>
+  {% else %}
+  <li class="muted">No mental models defined.</li>
+  {% endfor %}
+</ul>
+<h4>Composition</h4>
+<table>
+  <tr><th>#</th><th>Stage</th><th>Ver</th><th>Status</th><th>Required</th></tr>
+  {% for c in lesson.composition %}
+  <tr><td>{{ c.position }}</td><td>{{ c.stage }}</td><td>v{{ c.version_no }}</td>
+      <td><span class="pill {{ c.status }}">{{ c.status }}</span></td>
+      <td>{{ "yes" if c.required else "no" }}</td></tr>
+  {% endfor %}
+</table>
+{% endfor %}
+{% else %}
+<p class="muted">No lesson pins this stage yet.</p>
+{% endif %}
 {% endif %}
 
 {% if d.kind == "lesson" %}

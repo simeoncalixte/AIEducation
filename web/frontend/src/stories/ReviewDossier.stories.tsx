@@ -122,6 +122,24 @@ export const StageDossier: Story = {
         main.getAllByText(marker, { exact: false }).length,
       ).toBeGreaterThan(0);
     }
+    for (const heading of ["Challenge goals", "Lesson context"]) {
+      expect(
+        main.getByRole("heading", { name: new RegExp(heading) }),
+      ).toBeInTheDocument();
+    }
+    for (const marker of [
+      "crater",
+      "vent",
+      "goal-attempted",
+      "move magma",
+      "class default",
+      "Manager",
+      "guide",
+    ]) {
+      expect(
+        main.getAllByText(marker, { exact: false }).length,
+      ).toBeGreaterThan(0);
+    }
     await logout(canvas);
   },
 };

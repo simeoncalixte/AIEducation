@@ -228,6 +228,20 @@ class PipelineCase(unittest.TestCase):
             any(e[0] == "failed" and "PolicyViolation" in e[2]
                 for e in runs.events))
 
+    def test_challenge_contract_violation_blocks_draft(self):
+        content = make_content(
+            kind=AssetKind.challenge,
+            body={"task": "Label it.", "telemetry": ["attempted"]},
+        )
+        pipe, lib, _, _, runs, _ = self.make(content=content)
+        with self.assertRaises(PolicyViolation):
+            pipe.propose(make_request(kind=AssetKind.challenge),
+                         created_by_id=1)
+        self.assertEqual(lib.saved, [])
+        self.assertTrue(
+            any(e[0] == "failed" and "PolicyViolation" in e[2]
+                for e in runs.events))
+
     def test_backend_failure_marks_run_failed(self):
         pipe, lib, _, _, runs, _ = self.make(
             error=GenerationFailed("boom"))

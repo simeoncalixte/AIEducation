@@ -5,6 +5,7 @@
 {{ c.stage }}</p>
 <h1>{{ c.title }}</h1>
 <p><strong>Challenge {{ c.index }} of {{ c.total }}</strong></p>
+{% if c.guides %}<p class="muted">Guide: {{ c.guides | map(attribute="name") | join(", ") }}</p>{% endif %}
 {% if c.finished %}
 <div class="empty"><p>This attempt is finished.
 <a href="{{ url_for('play_debrief', attempt_id=c.attempt_id) }}">See results…</a></p></div>

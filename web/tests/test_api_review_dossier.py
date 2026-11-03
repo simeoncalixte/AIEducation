@@ -128,6 +128,28 @@ class ApiDossierTestCase(unittest.TestCase):
         for u in d["uses"]:
             self.assertIn("mastery", u)
 
+    def test_stage_dossier_shows_goals_and_lesson_context(self):
+        self.login("tess")
+        d = self.dossier("stage", self.ids["stage_draft_id"])
+        self.assertEqual(len(d["goals"]), 1)
+        entry = d["goals"][0]
+        self.assertEqual(entry["challenge"], "Label the Parts")
+        keys = {g["key"] for g in entry["goals"]}
+        self.assertEqual(keys, {"crater", "vent"})
+        crater = next(
+            g for g in entry["goals"] if g["key"] == "crater")
+        self.assertEqual(crater["evaluation"], "deterministic")
+        self.assertEqual(crater["rule"]["verb"], "goal-attempted")
+        self.assertTrue(crater["models"])
+        self.assertTrue(crater["probes"])
+        self.assertEqual(len(d["lessons"]), 1)
+        lesson = d["lessons"][0]
+        self.assertEqual(lesson["lesson"], "Volcanoes")
+        self.assertEqual(lesson["version_no"], 3)
+        self.assertEqual(lesson["scope"], "class default")
+        self.assertTrue(lesson["models"])
+        self.assertTrue(lesson["composition"])
+
     def test_lesson_dossier_shows_composition_and_audit(self):
         self.login("tess")
         d = self.dossier("lesson", self.ids["lesson_live_id"])
@@ -211,6 +233,73 @@ class ApiDossierTestCase(unittest.TestCase):
                                 json={"rationale": "too late"})
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.get_json()["code"], "not_draft")
+
+    def test_edit_replaces_stage_uses(self):
+        self.login("tess")
+        vid = self.ids["stage_draft_id"]
+        asset = self.ids["asset_draft_id"]
+        resp = self.client.post(
+            f"/api/review/stage/{vid}/edit",
+            json={"rationale": "Solo staging.",
+                  "uses": [{"asset_version_id": asset,
+                            "role": "solo"}]})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["message"], "Edit recorded.")
+        self.assertEqual(
+            [(u["asset"], u["role"]) for u in body["dossier"]["uses"]],
+            [("Volcano Model", "solo")])
+
+    def test_edit_can_remove_manager_guide(self):
+        self.login("tess")
+        vid = self.ids["stage_draft_id"]
+        uses = self.dossier("stage", vid)["uses"]
+        self.assertIn("guide", {u["role"] for u in uses})
+        kept = [{"asset_version_id": u["asset_version_id"],
+                 "role": u["role"]}
+                for u in uses if u["role"] != "guide"]
+        resp = self.client.post(f"/api/review/stage/{vid}/edit",
+                                json={"uses": kept})
+        self.assertEqual(resp.status_code, 200)
+        roles = {u["role"]
+                 for u in resp.get_json()["dossier"]["uses"]}
+        self.assertNotIn("guide", roles)
+
+    def test_edit_replaces_lesson_composition(self):
+        self.login("tess")
+        vid = self.ids["lesson_draft_id"]
+        stage = self.ids["stage_draft_id"]
+        resp = self.client.post(
+            f"/api/review/lesson/{vid}/edit",
+            json={"pins": [{"stage_version_id": stage,
+                            "required": False}]})
+        self.assertEqual(resp.status_code, 200)
+        rows = resp.get_json()["dossier"]["composition"]
+        self.assertEqual(
+            [(c["stage_version_id"], c["position"], c["required"])
+             for c in rows],
+            [(stage, 1, False)])
+
+    def test_edit_rejects_bad_structure(self):
+        self.login("tess")
+        stage = self.ids["stage_draft_id"]
+        resp = self.client.post(
+            f"/api/review/stage/{stage}/edit",
+            json={"uses": [{"asset_version_id": 9999,
+                            "role": "prop"}]})
+        self.assertEqual(resp.status_code, 404)
+        resp = self.client.post(
+            f"/api/review/stage/{stage}/edit",
+            json={"uses": [{"role": "prop"}]})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["code"], "invalid_edit")
+        lesson = self.ids["lesson_draft_id"]
+        resp = self.client.post(
+            f"/api/review/lesson/{lesson}/edit",
+            json={"pins": [{"stage_version_id": stage},
+                           {"stage_version_id": stage}]})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["code"], "invalid_edit")
 
     def test_rollback_restores_retired_lesson(self):
         self.login("tess")

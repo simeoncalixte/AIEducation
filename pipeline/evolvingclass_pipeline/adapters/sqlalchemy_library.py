@@ -129,6 +129,48 @@ class SqlAlchemyAssetLibrary(AssetLibraryPort):
                             value=tag.value,
                         )
                     )
+                goals: list[db.Goal] = []
+                for spec in content.goals:
+                    goal = db.Goal(
+                        challenge_version_id=version.id,
+                        key=spec.key,
+                        rule=dict(spec.rule),
+                        evaluation=db.GoalEvaluation(
+                            spec.evaluation.value
+                        ),
+                        rubric=(
+                            dict(spec.rubric)
+                            if spec.rubric is not None
+                            else None
+                        ),
+                        template_ref=spec.template_ref,
+                    )
+                    session.add(goal)
+                    goals.append(goal)
+                session.flush()
+                for spec, goal in zip(content.goals, goals):
+                    for model_id in spec.mental_model_ids:
+                        if (
+                            session.get(
+                                db.MentalModel, model_id) is None
+                        ):
+                            raise LookupError(
+                                f"mental model {model_id} not found")
+                        session.add(db.GoalMentalModel(
+                            goal_id=goal.id,
+                            mental_model_id=model_id,
+                        ))
+                    for misc_id in spec.misconception_ids:
+                        if (
+                            session.get(
+                                db.Misconception, misc_id) is None
+                        ):
+                            raise LookupError(
+                                f"misconception {misc_id} not found")
+                        session.add(db.GoalMisconception(
+                            goal_id=goal.id,
+                            misconception_id=misc_id,
+                        ))
                 return DraftRef(
                     asset_id=asset.id, version_id=version.id, version_no=version_no
                 )

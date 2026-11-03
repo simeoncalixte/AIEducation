@@ -358,11 +358,13 @@ def _use_rows(session: Session, version: StageVersion) -> list[dict]:
     return [{
         "asset": u.asset_version.asset.title,
         "kind": u.asset_version.asset.kind.value,
+        "asset_version_id": u.asset_version_id,
         "version_no": u.asset_version.version_no,
         "status": u.asset_version.status.value,
         "role": u.role,
         "mastery": _latest_mastery(session, u.asset_version_id),
-    } for u in version.asset_uses]
+        "param_overrides": dict(u.param_overrides or {}),
+    } for u in sorted(version.asset_uses, key=lambda u: u.position)]
 
 
 def _preview_rows(version) -> list[dict]:
@@ -384,6 +386,66 @@ def _composition_rows(version: LessonVersion) -> list[dict]:
         "required": link.required,
         "uses": len(link.stage_version.asset_uses),
     } for link in sorted(version.composition, key=lambda l: l.position)]
+
+
+def _stage_goal_rows(version: StageVersion) -> list[dict]:
+    """Challenge goals reachable from this stage's uses, by position."""
+    from DataModels import AssetKind
+
+    rows = []
+    for use in sorted(version.asset_uses, key=lambda u: u.position):
+        candidate = use.asset_version
+        if candidate.asset.kind is not AssetKind.challenge:
+            continue
+        rows.append({
+            "challenge": candidate.asset.title,
+            "challenge_version_id": candidate.id,
+            "version_no": candidate.version_no,
+            "goals": [{
+                "key": goal.key,
+                "evaluation": goal.evaluation.value,
+                "template_ref": goal.template_ref,
+                "rule": dict(goal.rule or {}),
+                "rubric": (
+                    dict(goal.rubric)
+                    if goal.rubric is not None else None
+                ),
+                "models": [m.statement for m in sorted(
+                    goal.mental_models, key=lambda m: m.position)],
+                "probes": [m.description for m in sorted(
+                    goal.probed_misconceptions, key=lambda m: m.id)],
+            } for goal in sorted(candidate.goals,
+                                 key=lambda g: g.key)],
+        })
+    return rows
+
+
+def _lesson_context_rows(version: StageVersion) -> list[dict]:
+    """Lesson versions pinning this stage, with models + composition."""
+    rows = []
+    for link in sorted(version.lesson_links,
+                       key=lambda l: l.lesson_version_id):
+        lesson_version = link.lesson_version
+        scope = "class default"
+        if lesson_version.student_scope_id is not None:
+            scope = (
+                "personal: "
+                f"{lesson_version.scope_student.display_name}"
+            )
+        rows.append({
+            "lesson": lesson_version.lesson.title,
+            "lesson_version_id": lesson_version.id,
+            "version_no": lesson_version.version_no,
+            "status": lesson_version.status.value,
+            "scope": scope,
+            "position": link.position,
+            "required": link.required,
+            "models": [m.statement for m in sorted(
+                lesson_version.mental_models,
+                key=lambda m: m.position)],
+            "composition": _composition_rows(lesson_version),
+        })
+    return rows
 
 
 def _audit(session: Session, kind: str, version_id: int) -> dict:
@@ -439,6 +501,8 @@ def detail(session: Session, kind: str, version_id: int) -> dict | None:
         "low_impact": False,
         "uses": [],
         "composition": [],
+        "goals": [],
+        "lessons": [],
     }
     if kind == "asset":
         assert isinstance(version, AssetVersion)
@@ -451,6 +515,8 @@ def detail(session: Session, kind: str, version_id: int) -> dict | None:
     elif kind == "stage":
         assert isinstance(version, StageVersion)
         dossier["uses"] = _use_rows(session, version)
+        dossier["goals"] = _stage_goal_rows(version)
+        dossier["lessons"] = _lesson_context_rows(version)
         dossier["previews"] = _preview_rows(version)
     else:
         assert isinstance(version, LessonVersion)
@@ -845,8 +911,13 @@ def _play_challenges(pinned_version) -> list[dict]:
     challenges = []
     for link in sorted(pinned_version.composition,
                        key=lambda l: l.position):
-        for use in sorted(link.stage_version.asset_uses,
-                          key=lambda u: u.position):
+        uses = sorted(link.stage_version.asset_uses,
+                      key=lambda u: u.position)
+        guides = [{
+            "name": use.asset_version.asset.title,
+            "role": use.role,
+        } for use in uses if use.role == "guide"]
+        for use in uses:
             candidate = use.asset_version
             if candidate.asset.kind is not AssetKind.challenge:
                 continue
@@ -855,6 +926,7 @@ def _play_challenges(pinned_version) -> list[dict]:
                 "stage": link.stage_version.stage.title,
                 "title": candidate.asset.title,
                 "goals": sorted(goal.key for goal in candidate.goals),
+                "guides": guides,
             })
     return challenges
 
@@ -894,6 +966,7 @@ def challenge_view(session: Session, attempt_id: int,
         "challenge_version_id": entry["challenge_version_id"],
         "goals": [{"key": key, "answered": key in answered}
                   for key in entry["goals"]],
+        "guides": entry["guides"],
         "finished": attempt.finished_at is not None,
     }
 

@@ -136,6 +136,99 @@ export const LessonEditRoundTrip: Story = {
   },
 };
 
+/** Stage uses round-trip: role edit saves, then reverts (SCRUM-33). */
+export const StageUsesEditRoundTrip: Story = {
+  args: { route: "/review" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await ensureLoggedOut(canvas);
+    await loginAs(canvas, "tess");
+    await canvas.findByText("Welcome, Tess");
+    const id = await queueId(
+      "stage",
+      (row) => row.title.includes("Eruption") && row.status === "draft",
+    );
+    expect(testNavigate).not.toBeNull();
+    testNavigate?.(`/review/stage/${id}/edit`);
+    await canvas.findByRole("heading", { name: /Edit draft:/ });
+    const edit = within(canvas.getByRole("main"));
+    const role = edit.getByLabelText(
+      "Role for Volcano Model · v2 (draft)",
+    );
+    expect(role).toHaveValue("centerpiece");
+    await userEvent.clear(role);
+    await userEvent.type(role, "keystone");
+    await userEvent.click(edit.getByRole("button", { name: "Save draft" }));
+    await canvas.findByRole("heading", { name: /Eruption · v2/ });
+    const back = within(canvas.getByRole("main"));
+    await back.findByText("Edit recorded.");
+    expect(
+      back.getAllByText("keystone", { exact: false }).length,
+    ).toBeGreaterThan(0);
+    testNavigate?.(`/review/stage/${id}/edit`);
+    await canvas.findByRole("heading", { name: /Edit draft:/ });
+    const revert = within(canvas.getByRole("main"));
+    const again = revert.getByLabelText(
+      "Role for Volcano Model · v2 (draft)",
+    );
+    await userEvent.clear(again);
+    await userEvent.type(again, "centerpiece");
+    await userEvent.click(
+      revert.getByRole("button", { name: "Save draft" }),
+    );
+    await canvas.findByRole("heading", { name: /Eruption · v2/ });
+    const done = within(canvas.getByRole("main"));
+    await done.findByText("Edit recorded.");
+    await logout(canvas);
+  },
+};
+
+/** Lesson pins round-trip: required toggle saves, then reverts (SCRUM-33). */
+export const LessonPinsEditRoundTrip: Story = {
+  args: { route: "/review" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await ensureLoggedOut(canvas);
+    await loginAs(canvas, "tess");
+    await canvas.findByText("Welcome, Tess");
+    const id = await queueId(
+      "lesson",
+      (row) =>
+        row.title.includes("Volcanoes") &&
+        row.status === "draft" &&
+        row.version_no === 3,
+    );
+    expect(testNavigate).not.toBeNull();
+    testNavigate?.(`/review/lesson/${id}/edit`);
+    await canvas.findByRole("heading", { name: /Edit draft: Volcanoes/ });
+    const edit = within(canvas.getByRole("main"));
+    const toggle = edit.getByLabelText("Required: Eruption · v2 (draft)");
+    expect(toggle).toBeChecked();
+    await userEvent.click(toggle);
+    await userEvent.click(edit.getByRole("button", { name: "Save draft" }));
+    await canvas.findByRole("heading", { name: /Volcanoes .* v3/ });
+    const back = within(canvas.getByRole("main"));
+    await back.findByText("Edit recorded.");
+    const saved = (await api.dossier("lesson", id)).dossier;
+    expect(saved.composition[0].required).toBe(false);
+    testNavigate?.(`/review/lesson/${id}/edit`);
+    await canvas.findByRole("heading", { name: /Edit draft: Volcanoes/ });
+    const revert = within(canvas.getByRole("main"));
+    await userEvent.click(
+      revert.getByLabelText("Required: Eruption · v2 (draft)"),
+    );
+    await userEvent.click(
+      revert.getByRole("button", { name: "Save draft" }),
+    );
+    await canvas.findByRole("heading", { name: /Volcanoes .* v3/ });
+    const done = within(canvas.getByRole("main"));
+    await done.findByText("Edit recorded.");
+    const restored = (await api.dossier("lesson", id)).dossier;
+    expect(restored.composition[0].required).toBe(true);
+    await logout(canvas);
+  },
+};
+
 /** Saving a non-draft surfaces the draft-only guard error (SCRUM-179). */
 export const NonDraftGuarded: Story = {
   args: { route: "/review" },

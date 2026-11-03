@@ -21,6 +21,35 @@ class SqlAlchemyStageLibrary(StageLibraryPort):
     def __init__(self, session_factory: Callable[[], Session]) -> None:
         self._sessions = session_factory
 
+    def lesson_version_status(self, lesson_version_id: int) -> str | None:
+        """Composition-root helper for draft checks; None when missing."""
+        with self._sessions() as session:
+            version = session.get(db.LessonVersion, lesson_version_id)
+            return version.status.value if version is not None else None
+
+    def manager_guide_version_id(self) -> int | None:
+        """Latest published character version tagged role=manager."""
+        with self._sessions() as session:
+            return session.scalar(
+                select(db.AssetVersion.id)
+                .join(
+                    db.AssetTag,
+                    db.AssetTag.asset_version_id == db.AssetVersion.id,
+                )
+                .join(
+                    db.Asset,
+                    db.Asset.id == db.AssetVersion.asset_id,
+                )
+                .where(
+                    db.Asset.kind == db.AssetKind.character,
+                    db.AssetVersion.status == db.VersionStatus.published,
+                    db.AssetTag.taxonomy == db.TagTaxonomy.role,
+                    db.AssetTag.value == "manager",
+                )
+                .order_by(db.AssetVersion.id.desc())
+                .limit(1)
+            )
+
     def save_stage_draft(
         self,
         assembly: StageAssembly,
@@ -87,7 +116,34 @@ class SqlAlchemyStageLibrary(StageLibraryPort):
                         param_overrides=dict(use.param_overrides or {}),
                     ))
                 session.flush()
+                position = None
+                if assembly.lesson_version_id is not None:
+                    lesson_version = session.get(
+                        db.LessonVersion, assembly.lesson_version_id
+                    )
+                    if lesson_version is None:
+                        raise LookupError(
+                            "Unknown lesson version "
+                            f"{assembly.lesson_version_id}."
+                        )
+                    position = (
+                        session.scalar(
+                            select(func.max(
+                                db.LessonVersionStage.position)).where(
+                                db.LessonVersionStage.lesson_version_id ==
+                                assembly.lesson_version_id
+                            )
+                        )
+                        or 0
+                    ) + 1
+                    session.add(db.LessonVersionStage(
+                        lesson_version_id=assembly.lesson_version_id,
+                        stage_version_id=version.id,
+                        position=position,
+                    ))
+                    session.flush()
                 return StageDraftRef(
                     stage_id=stage.id, version_id=version.id,
                     version_no=version.version_no,
+                    composition_position=position,
                 )

@@ -103,6 +103,8 @@ class ApiChallengeTestCase(unittest.TestCase):
             challenge["goals"],
             [{"key": "crater", "answered": False},
              {"key": "vent", "answered": False}])
+        self.assertEqual(challenge["guides"],
+                         [{"name": "Manager", "role": "guide"}])
         self.assertFalse(challenge["finished"])
         self.assertFalse(challenge["preview"])
 
