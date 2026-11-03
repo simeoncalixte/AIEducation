@@ -135,13 +135,18 @@ class ApiDossierTestCase(unittest.TestCase):
         entry = d["goals"][0]
         self.assertEqual(entry["challenge"], "Label the Parts")
         keys = {g["key"] for g in entry["goals"]}
-        self.assertEqual(keys, {"crater", "vent"})
+        self.assertEqual(keys, {"crater", "vent", "explain"})
         crater = next(
             g for g in entry["goals"] if g["key"] == "crater")
         self.assertEqual(crater["evaluation"], "deterministic")
         self.assertEqual(crater["rule"]["verb"], "goal-attempted")
         self.assertTrue(crater["models"])
         self.assertTrue(crater["probes"])
+        explain = next(
+            g for g in entry["goals"] if g["key"] == "explain")
+        self.assertEqual(explain["evaluation"], "teacher")
+        self.assertTrue(explain["rubric"]["criteria"])
+        self.assertTrue(explain["models"])
         self.assertEqual(len(d["lessons"]), 1)
         lesson = d["lessons"][0]
         self.assertEqual(lesson["lesson"], "Volcanoes")

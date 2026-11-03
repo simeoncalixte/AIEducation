@@ -19,6 +19,9 @@ from DataModels import (
     ExperienceEvent,
     Goal,
     GoalEvaluation,
+    ImpactRollup,
+    MasteryEvidence,
+    MasteryRecord,
     Misconception,
     UserRole,
     VerdictOverride,
@@ -39,6 +42,7 @@ VERDICT_VERB = "goal-verdict"
 FLAG_VERB = "misconception-flagged"
 TEACHER_EVAL_VERB = "teacher-evaluation"
 TEACHER_EVALUATOR_VERSION = "teacher/v1"
+TEACHER_FORMULA_VERSION = "teacher/v1"
 
 
 def _require_teacher_or_admin(session, actor_id: int) -> None:
@@ -160,6 +164,85 @@ def _challenge_in_attempt_composition(
     return False
 
 
+def _apply_teacher_mastery(session, attempt: Attempt, goal: Goal,
+                           event: ExperienceEvent, passed: bool) -> None:
+    """Point the student's mastery at the latest teacher outcome.
+
+    One record per mental model the goal verifies; each grade appends
+    its evidence link, so re-grades keep the full history while the
+    score follows the latest grade.
+    """
+    for model in sorted(goal.mental_models, key=lambda m: m.id):
+        record = session.scalar(
+            select(MasteryRecord).where(
+                MasteryRecord.student_id == attempt.student_id,
+                MasteryRecord.mental_model_id == model.id,
+            )
+        )
+        if record is None:
+            record = MasteryRecord(
+                student_id=attempt.student_id,
+                mental_model_id=model.id,
+                score=float(passed),
+                confidence=0.5,
+            )
+            session.add(record)
+            session.flush()
+        else:
+            record.score = float(passed)
+            seen = session.scalar(
+                select(func.count()).where(
+                    MasteryEvidence.mastery_record_id == record.id,
+                )
+            ) or 0
+            record.confidence = 1.0 - 0.5 / (seen + 1)
+        session.add(MasteryEvidence(
+            mastery_record_id=record.id,
+            experience_event_id=event.id,
+            source=TEACHER_EVAL_VERB,
+            weight=1.0,
+        ))
+
+
+def _refresh_teacher_impact(session, challenge_version_id: int) -> None:
+    """Snapshot the challenge's teacher-grade pass rate (SCRUM-38).
+
+    Mastery is the mean over latest teacher outcomes per attempt goal;
+    completion and enjoyment stay 0 until the deterministic verdict and
+    rating aggregations land, and the formula version marks the row as
+    teacher-signal-only.
+    """
+    rows = session.execute(
+        select(ExperienceEvent.attempt_id, ExperienceEvent.goal_id,
+               ExperienceEvent.payload)
+        .join(Goal, ExperienceEvent.goal_id == Goal.id)
+        .where(
+            Goal.challenge_version_id == challenge_version_id,
+            Goal.evaluation == GoalEvaluation.teacher,
+            ExperienceEvent.verb == TEACHER_EVAL_VERB,
+        )
+        .order_by(ExperienceEvent.id)
+    ).all()
+    latest: dict[tuple[int, int], bool] = {}
+    for attempt_id, goal_id, payload in rows:
+        latest[(attempt_id, goal_id)] = bool((payload or {}).get("passed"))
+    if not latest:
+        return
+    mastery = (
+        sum(1.0 if passed else 0.0 for passed in latest.values())
+        / len(latest)
+    )
+    session.add(ImpactRollup(
+        asset_version_id=challenge_version_id,
+        window="all",
+        mastery=mastery,
+        completion=0.0,
+        enjoyment=0.0,
+        sample_size=len(latest),
+        formula_version=TEACHER_FORMULA_VERSION,
+    ))
+
+
 def record_teacher_evaluation(
     make_session: SessionFactory,
     attempt_id: int,
@@ -170,9 +253,11 @@ def record_teacher_evaluation(
 ) -> int:
     """Grade a teacher-evaluated goal from recorded evidence.
 
-    Emits one server ``teacher-evaluation`` event per attempt goal;
-    deterministic goals and repeat grades are rejected (re-grading
-    arrives with the rubric grading view). Returns the event id.
+    Each grade appends a server ``teacher-evaluation`` event; repeat
+    grades are allowed with latest-wins applied at read time (the same
+    history policy as verdict overrides). The grade upserts the
+    student's mastery for the goal's mental models and snapshots the
+    challenge's teacher-grade impact. Returns the event id.
     """
     if not isinstance(passed, bool):
         raise PublicationError(
@@ -200,20 +285,9 @@ def record_teacher_evaluation(
                 INVALID_SCOPE,
                 "Evaluations must grade a challenge of the "
                 "attempt's lesson.")
-        graded = session.scalar(
-            select(ExperienceEvent.id).where(
-                ExperienceEvent.attempt_id == attempt_id,
-                ExperienceEvent.goal_id == goal_id,
-                ExperienceEvent.verb == TEACHER_EVAL_VERB,
-            )
-        )
-        if graded is not None:
-            raise PublicationError(
-                INVALID_FEEDBACK,
-                f"Goal {goal.key!r} is already evaluated.")
         event = ExperienceEvent(
             attempt_id=attempt_id,
-            client_event_id=f"teacher-eval-{goal_id}",
+            client_event_id=f"teacher-eval-{goal_id}-{uuid.uuid4().hex[:12]}",
             sequence_no=_next_sequence(session, attempt_id),
             origin=EventOrigin.server,
             actor_id=actor_id,
@@ -229,6 +303,8 @@ def record_teacher_evaluation(
         session.add(event)
         session.flush()
         assert event.id is not None
+        _apply_teacher_mastery(session, attempt, goal, event, passed)
+        _refresh_teacher_impact(session, goal.challenge_version_id)
         return event.id
 
 
@@ -236,6 +312,7 @@ __all__ = [
     "FLAG_VERB",
     "TEACHER_EVAL_VERB",
     "TEACHER_EVALUATOR_VERSION",
+    "TEACHER_FORMULA_VERSION",
     "VERDICT_VERB",
     "flag_misconception",
     "record_teacher_evaluation",

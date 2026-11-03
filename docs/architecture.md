@@ -186,11 +186,12 @@ One deployable service in pilot:
 
 ### 4. Web player
 
-Lesson briefing/debrief pages (server-rendered for fast first paint and
-shareable links), review-adjacent previews, assigned-lesson player, and the
-fallback player when immersive is unavailable. Stage views open on the
-server-rendered poster frame while interactive 3D loads. Emits the same
-experience events as the immersive runtime so progress is renderer-independent.
+Lesson briefing/debrief pages (React, served by the frontend dev server
+with shareable links), review-adjacent previews, assigned-lesson player,
+and the fallback player when immersive is unavailable. Stage views open
+on the server-rendered poster frame while interactive 3D loads. Emits the
+same experience events as the immersive runtime so progress is
+renderer-independent.
 
 ### 5. AR/VR view (immersive runtime)
 

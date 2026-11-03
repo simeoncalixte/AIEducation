@@ -57,11 +57,13 @@ class ApiDebriefTestCase(unittest.TestCase):
                 ("asset", self.ids["challenge_draft_id"]),
                 ("stage", self.ids["stage_draft_id"]),
                 ("lesson", self.ids["lesson_draft_id"])):
-            self.client.post(f"/review/{kind}/{vid}/approve",
-                             data={"rationale": "ok"})
-            resp = self.client.post(f"/review/{kind}/{vid}/publish",
-                                    data={"rationale": "ship"})
-            self.assertEqual(resp.status_code, 302)
+            resp = self.client.post(
+                f"/api/review/{kind}/{vid}/approve",
+                json={"rationale": "ok"})
+            self.assertEqual(resp.status_code, 200)
+            resp = self.client.post(f"/api/review/{kind}/{vid}/publish",
+                                    json={"rationale": "ship"})
+            self.assertEqual(resp.status_code, 200)
 
     def _assign(self):
         self.login("tess")
@@ -129,6 +131,34 @@ class ApiDebriefTestCase(unittest.TestCase):
         attempt_id = self._start(aid)
         debrief = self._debrief(attempt_id)
         self.assertEqual(debrief["verdicts"], [])
+
+    def test_next_steps_name_failed_goals(self):
+        _, attempt_id = self._setup_attempt()
+        steps = self._debrief(attempt_id)["next_steps"]
+        by_goal = {step["goal"]: step for step in steps
+                   if step["kind"] == "retry_goal"}
+        self.assertIn("vent", by_goal)
+        self.assertNotIn("crater", by_goal)
+        self.assertIn("vent", by_goal["vent"]["text"])
+
+    def test_next_steps_advance_when_all_pass(self):
+        self._publish_challenge_lesson()
+        aid = self._assign()
+        self.login("sam")
+        attempt_id = self._start(aid)
+        self._answer(attempt_id, ["crater", "vent"])
+        steps = self._debrief(attempt_id)["next_steps"]
+        kinds = {step["kind"] for step in steps}
+        self.assertIn("advance", kinds)
+        self.assertNotIn("retry_goal", kinds)
+
+    def test_next_steps_continue_without_verdicts(self):
+        self._publish_challenge_lesson()
+        aid = self._assign()
+        self.login("sam")
+        attempt_id = self._start(aid)
+        steps = self._debrief(attempt_id)["next_steps"]
+        self.assertEqual([step["kind"] for step in steps], ["continue"])
 
     def test_rate_records_enjoyment(self):
         _, attempt_id = self._setup_attempt()

@@ -230,6 +230,16 @@ def _build(session: Session, factory: sessionmaker) -> dict:
                    "require": "present"},
              evaluation=GoalEvaluation.deterministic,
              template_ref="label"),
+        Goal(challenge_version_id=challenge_v1.id, key="explain",
+             rule={"verb": "goal-attempted", "object_ref": "explain",
+                   "require": "present"},
+             evaluation=GoalEvaluation.teacher,
+             rubric={"criteria": [
+                 "Names magma as the moving material.",
+                 "Describes the vent path from chamber to surface.",
+                 "Cites evidence seen in the scene.",
+             ]},
+             template_ref="explain"),
     ])
     session.flush()
     ids["challenge_draft_id"] = challenge_v1.id

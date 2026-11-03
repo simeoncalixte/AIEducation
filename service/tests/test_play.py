@@ -22,6 +22,7 @@ from DataModels import (  # noqa: E402
     AttemptPin,
     Base,
     Classroom,
+    EventOrigin,
     ExperienceEvent,
     Goal,
     GoalEvaluation,
@@ -42,6 +43,7 @@ from evolvingclass_service import (  # noqa: E402
     answer_challenge,
     finish_attempt,
     rate_lesson,
+    record_client_event,
     retry_attempt,
     start_attempt,
 )
@@ -240,6 +242,78 @@ class PlayTestCase(unittest.TestCase):
         with self.assertRaises(PublicationError) as ctx:
             rate_lesson(self.make_session, aid, self.student_id, 6)
         self.assertEqual(ctx.exception.code, "invalid_play")
+
+    def test_client_event_intake_is_idempotent(self):
+        aid = start_attempt(
+            self.make_session, self.assignment_id, self.student_id)
+        first_id, first_dup = record_client_event(
+            self.make_session, aid, self.student_id, "evt-1", "viewed",
+            object_type="stage", object_ref="eruption",
+            payload={"t": 12})
+        self.assertFalse(first_dup)
+        second_id, second_dup = record_client_event(
+            self.make_session, aid, self.student_id, "evt-1", "viewed",
+            payload={"t": 999})
+        self.assertTrue(second_dup)
+        self.assertEqual(second_id, first_id)
+        with self.make_session() as session:
+            rows = list(session.scalars(
+                select(ExperienceEvent).where(
+                    ExperienceEvent.attempt_id == aid)))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].payload, {"t": 12})
+            self.assertEqual(rows[0].origin, EventOrigin.client)
+            self.assertEqual(rows[0].sequence_no, 1)
+
+    def test_client_event_sequences_unique_per_attempt(self):
+        aid = start_attempt(
+            self.make_session, self.assignment_id, self.student_id)
+        for index in range(3):
+            record_client_event(
+                self.make_session, aid, self.student_id,
+                f"evt-{index}", "viewed")
+        with self.make_session() as session:
+            seqs = list(session.scalars(
+                select(ExperienceEvent.sequence_no).where(
+                    ExperienceEvent.attempt_id == aid
+                ).order_by(ExperienceEvent.sequence_no)))
+            self.assertEqual(seqs, [1, 2, 3])
+
+    def test_client_event_rejects_server_only_verbs(self):
+        aid = start_attempt(
+            self.make_session, self.assignment_id, self.student_id)
+        for verb in ("goal-verdict", "teacher-evaluation",
+                     "launch-decision"):
+            with self.assertRaises(PublicationError) as ctx:
+                record_client_event(
+                    self.make_session, aid, self.student_id,
+                    f"evt-{verb}", verb)
+            self.assertEqual(ctx.exception.code, "invalid_play", verb)
+        with self.make_session() as session:
+            count = session.query(ExperienceEvent).filter_by(
+                attempt_id=aid).count()
+            self.assertEqual(count, 0)
+
+    def test_client_event_rejections(self):
+        aid = start_attempt(
+            self.make_session, self.assignment_id, self.student_id)
+        with self.assertRaises(PublicationError) as ctx:
+            record_client_event(
+                self.make_session, aid, self.student_id, "  ", "viewed")
+        self.assertEqual(ctx.exception.code, "invalid_play")
+        with self.assertRaises(PublicationError) as ctx:
+            record_client_event(
+                self.make_session, aid, self.student_id, "evt-x", "  ")
+        self.assertEqual(ctx.exception.code, "invalid_play")
+        with self.assertRaises(PublicationError) as ctx:
+            record_client_event(
+                self.make_session, aid, self.other_id, "evt-x", "viewed")
+        self.assertEqual(ctx.exception.code, "forbidden")
+        with self.assertRaises(PublicationError) as ctx:
+            record_client_event(
+                self.make_session, 9999, self.student_id, "evt-x",
+                "viewed")
+        self.assertEqual(ctx.exception.code, "not_found")
 
     def test_retry_opens_new_attempt_on_same_pins(self):
         aid = start_attempt(

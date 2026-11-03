@@ -36,10 +36,14 @@ from .errors import (
     NOT_FOUND,
     PublicationError,
 )
-from .goals import evaluate_attempt
+from .feedback import TEACHER_EVAL_VERB
+from .goals import VERDICT_VERB, evaluate_attempt
+from .launch import LAUNCH_VERB
 from .publication import SessionFactory, resolve_current_lesson_version
 
 ANSWER_VERB = "goal-attempted"
+SERVER_ONLY_VERBS = frozenset(
+    {VERDICT_VERB, TEACHER_EVAL_VERB, LAUNCH_VERB})
 
 
 def _require_student(session, student_id: int) -> AppUser:
@@ -149,6 +153,11 @@ def record_client_event(
             INVALID_PLAY, "An event needs a client event id.")
     if not verb.strip():
         raise PublicationError(INVALID_PLAY, "An event needs a verb.")
+    if verb.strip() in SERVER_ONLY_VERBS:
+        raise PublicationError(
+            INVALID_PLAY,
+            f"Verb {verb.strip()!r} is server-issued; clients "
+            "may not report it.")
     with make_session() as session:
         _require_owner(session, attempt_id, student_id)
         exists = session.scalar(
@@ -391,6 +400,7 @@ def retry_attempt(
 
 __all__ = [
     "ANSWER_VERB",
+    "SERVER_ONLY_VERBS",
     "answer_challenge",
     "finish_attempt",
     "rate_lesson",

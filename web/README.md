@@ -1,23 +1,15 @@
-# EvolvingClass teacher web UI
+# EvolvingClass JSON API + React UI
 
-Server-rendered Flask pages: login with student/teacher/admin roles,
-role-based navigation and route guards (SCRUM-122), the review queues
-for asset, stage, and lesson proposals (SCRUM-124: diffs, rationale,
-directive coverage, reuse matches, impact scores, and the
-approve / reject / edit / publish / rollback / retire actions with a
-full audit trail) — plus SCRUM-15: the lesson list and brief form,
-where a teacher brief becomes a kind=`brief` directive and a lesson
-draft proposal — plus SCRUM-28: publish-time preview finalization
-with per-version artifacts on asset and stage dossiers —
-plus SCRUM-27/29: usage refs, low-impact flags with evidence,
-and the asset revise action — plus SCRUM-123/17: the per-lesson
-directives panel (class-wide and per-student steering with edit and
-deactivate) and scoped briefs — plus SCRUM-125/18: assignment flow
-and live per-student progress with inline overrides and flags —
-plus SCRUM-19: verdict-override and misconception-flag actions —
-plus SCRUM-126/20: the student player (assignment home, briefing,
-challenges with progress, debrief, ratings, retry) —
-plus SCRUM-21: the admin audit (school status, filterable history).
+The Flask app serves the JSON `/api/*` only: session auth with
+student/teacher/admin roles (SCRUM-122/174/175/176), review queues
+and dossiers with approve / reject / edit / publish / rollback /
+retire (SCRUM-124), briefs and directives (SCRUM-15/123/17),
+assignments and per-student progress (SCRUM-125/18), overrides and
+flags (SCRUM-19), the student player endpoints — briefing,
+challenges, debrief, ratings, retry (SCRUM-126/20) — audit
+(SCRUM-21), checkpoints, event intake, launch routing (SCRUM-10),
+and rubric grading (SCRUM-38/129). React (`frontend/`) owns every
+page; no HTML is served from Flask.
 
 ## Run it
 
@@ -28,8 +20,8 @@ PYTHONPATH=database:pipeline:service:web service/.venv/bin/python -m evolvingcla
 PYTHONPATH=database:pipeline:service:web PORT=5001 service/.venv/bin/python -m evolvingclass_web.app
 ```
 
-Then open http://127.0.0.1:5001 in a browser and log in with a
-pilot login name (see the seeded users). Pilot login uses login names
+The API listens on http://127.0.0.1:5001 (JSON only — use the
+React reviewer loop below for pages). Pilot login uses login names
 only; passwords arrive with school SSO post-pilot.
 
 `DATABASE_URL` selects the database (default: `web/dev.db`);
@@ -48,11 +40,9 @@ PYTHONPATH=/Users/simeon/Projects/EvolvingClass/database:/Users/simeon/Projects/
 
 ## React frontend (SCRUM-173) + Storybook (SCRUM-190)
 
-`frontend/` holds the React migration: each page task ships its JSON
-API (see `evolvingclass_web/api.py`, served alongside the Flask pages
-under `/api/*`) plus the React page plus tests. Flask routes retire
-only after React parity is verified; unmigrated React routes link out
-to the live Flask page.
+`frontend/` holds every page, backed by the JSON API in
+`evolvingclass_web/api.py`. All stories render React components
+against the live server — no mocked API responses.
 
 Reviewer loop (one command, from `web/frontend`):
 
@@ -73,15 +63,13 @@ See `frontend/README.md` for all commands and the review loop.
 
 ## Layout
 
-- `evolvingclass_web/app.py` — Flask factory, routes, action handlers.
-  Handlers are thin: decisions and edits go through
-  `evolvingclass_service.review`, publishing through
-  `evolvingclass_service.publication`.
+- `evolvingclass_web/app.py` — Flask factory: session auth guard
+  plus the `/api/*` routes (no HTML).
+- `evolvingclass_web/api.py` — JSON handlers. Handlers are thin:
+  decisions and edits go through `evolvingclass_service.review`,
+  publishing through `evolvingclass_service.publication`.
 - `evolvingclass_web/present.py` — view-model builders (queues, diffs,
   directive coverage, reuse matches, impact rows, audit, lesson list,
-  brief context). Returns plain
-  dicts; templates never see ORM instances.
+  brief context). Returns plain dicts; callers never see ORM
+  instances.
 - `evolvingclass_web/seed.py` — demo data via the real service calls.
-- `evolvingclass_web/templates/` — Jinja pages: login, home, error,
-  queues, dossier, edit form, lesson list, brief form, directives,
-  assignments, briefing, challenge, debrief, audit.

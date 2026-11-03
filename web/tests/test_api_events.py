@@ -155,6 +155,65 @@ class ApiEventsTestCase(unittest.TestCase):
         resp = self._post(attempt_id)
         self.assertEqual(resp.status_code, 403)
 
+    def test_server_only_verbs_rejected_as_json(self):
+        attempt_id = self._attempt()
+        for verb in ("goal-verdict", "teacher-evaluation",
+                     "launch-decision"):
+            resp = self._post(attempt_id, verb=verb,
+                              client_event_id=f"evt-{verb}")
+            self.assertEqual(resp.status_code, 400, verb)
+            self.assertIn("invalid_play", resp.get_json()["error"])
+        self.assertEqual(self._event_count(attempt_id), 0)
+
+    def _publish_challenge_lesson(self):
+        with self.client.session_transaction() as sess:
+            sess["actor_id"] = self.ids["teacher_id"]
+        for kind, vid in (
+                ("asset", self.ids["asset_draft_id"]),
+                ("asset", self.ids["challenge_draft_id"]),
+                ("stage", self.ids["stage_draft_id"]),
+                ("lesson", self.ids["lesson_draft_id"])):
+            resp = self.client.post(
+                f"/api/review/{kind}/{vid}/approve",
+                json={"rationale": "ok"})
+            self.assertEqual(resp.status_code, 200)
+            resp = self.client.post(f"/api/review/{kind}/{vid}/publish",
+                                    json={"rationale": "ship"})
+            self.assertEqual(resp.status_code, 200)
+
+    def test_in_scene_telemetry_then_answer_reports_verdicts(self):
+        # SCRUM-35: raw XR telemetry coexists with the deterministic
+        # answer path. Telemetry alone issues no verdicts (no
+        # premature fails); answering completes the round trip and the
+        # debrief reports the verdicts back to the record.
+        self._publish_challenge_lesson()
+        aid = self._assign()
+        self.login("sam")
+        resp = self.client.post(f"/api/play/{aid}/start")
+        attempt_id = resp.get_json()["attempt_id"]
+        for client_id, verb, ref in (
+                ("xr-loaded", "stage-loaded", "eruption"),
+                ("xr-hint", "hint-requested", "crater"),
+                ("xr-crater", "goal-attempted", "crater")):
+            posted = self._post(
+                attempt_id, client_event_id=client_id, verb=verb,
+                object_type="goal", object_ref=ref, payload={})
+            self.assertEqual(posted.status_code, 200)
+        early = self.client.get(
+            f"/api/play/attempt/{attempt_id}/debrief").get_json()["debrief"]
+        self.assertEqual(early["verdicts"], [])
+        answered = self.client.post(
+            f"/api/play/attempt/{attempt_id}/challenge/1/answer",
+            json={"goals": ["crater", "vent"]})
+        self.assertEqual(answered.status_code, 200)
+        verdicts = {
+            (row["goal"], row["passed"])
+            for row in self.client.get(
+                f"/api/play/attempt/{attempt_id}/debrief"
+            ).get_json()["debrief"]["verdicts"]
+        }
+        self.assertEqual(verdicts, {("crater", True), ("vent", True)})
+
     def test_invalid_shapes_rejected_as_json(self):
         attempt_id = self._attempt()
         for overrides, marker in [

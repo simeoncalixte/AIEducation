@@ -1,13 +1,8 @@
 # EvolvingClass React frontend
 
-React migration of the Flask pilot UI (SCRUM-173), page by page, with
-Storybook interaction tests against the live server (SCRUM-190).
-
-- The Flask app stays live during the migration: each page task ships
-  its JSON API plus the React page plus tests, and the Flask route
-  retires only after React parity is verified.
-- Unmigrated routes render a placeholder linking to the live Flask
-  page (the pilot session cookie carries over — same host).
+React UI for the EvolvingClass pilot (SCRUM-173), with Storybook
+interaction tests against the live server (SCRUM-190). React owns
+every page; the Flask app serves the JSON `/api/*` only.
 
 ## Reviewer loop (one command)
 
@@ -30,7 +25,7 @@ with seeded demo data — no mocked API responses.
 ## Commands
 
 ```sh
-npm run dev            # React dev server on :5173 (/api proxied to Flask)
+npm run dev            # React dev server on :5173 (/api proxied to the API server)
 npm run build          # typecheck + production build
 npm run storybook      # Storybook on :6006 (needs the API server up)
 npm run build-storybook
@@ -48,10 +43,9 @@ the relative `/api` path.
 - `src/session.tsx` — session provider (user, login, logout).
 - `src/components/` — `Shell` (role-based nav + flash), `ErrorPage`,
   `EmptyState`.
-- `src/pages/` — `LoginPage`, `HomePage`, `LogoutPage`,
-  `ReviewQueuesPage`, `ReviewDossierPage`, `EditDraftPage`,
-  `PlaceholderPage` (unmigrated-route stand-in).
-- `src/App.tsx` — client routes for every current Flask page path.
+- `src/pages/` — one page per route (`LoginPage`, `HomePage`,
+  `ReviewQueuesPage`, `ChallengePage`, `GradingPage`, …).
+- `src/App.tsx` — client routes for every page path.
 - `src/stories/` — shell stories plus live page stories with play
   functions (`helpers.ts` keeps the shared session order-independent).
 - `scripts/review.sh` — reviewer launch; `scripts/test-live.sh` —

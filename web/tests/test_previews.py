@@ -1,4 +1,8 @@
-"""Tests for publish-time preview finalization (SCRUM-28)."""
+"""Tests for publish-time preview finalization via the JSON API.
+
+Asset finalization is covered in test_api_review_dossier.py; this file
+keeps the stage-namespacing and the unset-preview-dir cases.
+"""
 
 import os
 import sys
@@ -49,36 +53,26 @@ class PreviewTestCase(unittest.TestCase):
         finally:
             engine.dispose()
 
-    def test_publish_asset_finalizes_and_shows_preview(self):
-        vid = self.ids["asset_draft_id"]
-        self.client.post(f"/review/asset/{vid}/approve",
-                         data={"rationale": "good"})
-        body = self.client.post(
-            f"/review/asset/{vid}/publish", data={"rationale": "ship"},
-            follow_redirects=True).get_data(as_text=True)
-        self.assertIn("Previews", body)
-        self.assertIn("v2_poster.svg", body)
-        rows = self._artifacts("asset", vid)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["kind"], "poster")
-        self.assertTrue(os.path.exists(
-            os.path.join(self._previews.name, rows[0]["storage_ref"])))
+    def _approve_publish(self, kind, version_id):
+        resp = self.client.post(
+            f"/api/review/{kind}/{version_id}/approve",
+            json={"rationale": "ok"})
+        self.assertEqual(resp.status_code, 200)
+        resp = self.client.post(
+            f"/api/review/{kind}/{version_id}/publish",
+            json={"rationale": "ship"})
+        self.assertEqual(resp.status_code, 200)
+        return resp.get_json()
 
     def test_publish_stage_finalizes_namespaced_preview(self):
         for vid in (self.ids["asset_draft_id"],
                     self.ids["challenge_draft_id"]):
-            self.client.post(f"/review/asset/{vid}/approve",
-                             data={"rationale": "ok"})
-            self.client.post(f"/review/asset/{vid}/publish",
-                             data={"rationale": "ship"})
+            self._approve_publish("asset", vid)
         vid = self.ids["stage_draft_id"]
-        self.client.post(f"/review/stage/{vid}/approve",
-                         data={"rationale": "ok"})
-        body = self.client.post(
-            f"/review/stage/{vid}/publish", data={"rationale": "ship"},
-            follow_redirects=True).get_data(as_text=True)
-        self.assertIn("Previews", body)
-        self.assertIn("stage/", body)
+        payload = self._approve_publish("stage", vid)
+        refs = [p["storage_ref"] for p in payload["dossier"]["previews"]]
+        self.assertEqual(len(refs), 1)
+        self.assertTrue(refs[0].startswith("stage/"))
         rows = self._artifacts("stage", vid)
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0]["storage_ref"].startswith("stage/"))
@@ -86,13 +80,9 @@ class PreviewTestCase(unittest.TestCase):
     def test_publish_without_preview_dir_skips_preview(self):
         self.app.config["preview_dir"] = None
         vid = self.ids["asset_draft_id"]
-        self.client.post(f"/review/asset/{vid}/approve",
-                         data={"rationale": "good"})
-        body = self.client.post(
-            f"/review/asset/{vid}/publish", data={"rationale": "ship"},
-            follow_redirects=True).get_data(as_text=True)
-        self.assertIn("Publication recorded.", body)
-        self.assertIn("No previews rendered for this version yet.", body)
+        payload = self._approve_publish("asset", vid)
+        self.assertEqual(payload["message"], "Publication recorded.")
+        self.assertEqual(payload["dossier"]["previews"], [])
         self.assertEqual(self._artifacts("asset", vid), [])
 
 

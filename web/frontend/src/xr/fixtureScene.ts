@@ -8,6 +8,7 @@
  * owned there.
  */
 import * as THREE from "three";
+import type { GuideIdentity, OrbitView } from "./runtimeClient";
 
 export interface FixtureCallbacks {
   onFirstFrame: (msSinceStart: number) => void;
@@ -19,7 +20,14 @@ export interface FixtureHandle {
   enterAR: () => Promise<void>;
   dispose: () => void;
   info: () => { webgl2: boolean };
+  snapshotView: () => OrbitView;
+  restoreView: (view: OrbitView) => void;
+  /** Floating in-scene challenge prompt (SCRUM-128); null clears it. */
+  setPrompt: (text: string | null) => void;
 }
+
+/** Default orbit view; checkpoints restore into this shape. */
+export const DEFAULT_VIEW: OrbitView = { theta: 0.65, phi: 1.08, radius: 27 };
 
 export interface XRSupport {
   hasXR: boolean;
@@ -129,9 +137,15 @@ export function createFixtureStage(
     startTime: number;
     reducedMotion: boolean;
     callbacks: FixtureCallbacks;
+    /** Restored orbit view from a checkpoint (SCRUM-127). */
+    initialView?: OrbitView | null;
+    /** Guide rendered in-scene with web identity (SCRUM-200). */
+    manager?: GuideIdentity | null;
+    /** Floating challenge prompt above the diorama (SCRUM-128). */
+    prompt?: string | null;
   },
 ): FixtureHandle {
-  const { startTime, reducedMotion, callbacks } = opts;
+  const { startTime, reducedMotion, callbacks, initialView, manager } = opts;
   let renderer: THREE.WebGLRenderer;
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -142,6 +156,9 @@ export function createFixtureStage(
       enterAR: () => Promise.reject(new Error("no renderer")),
       dispose: () => undefined,
       info: () => ({ webgl2: false }),
+      snapshotView: () => ({ ...DEFAULT_VIEW }),
+      restoreView: () => undefined,
+      setPrompt: () => undefined,
     };
   }
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -279,6 +296,24 @@ export function createFixtureStage(
   ventTag.position.set(7.6, 4.6, 4.2);
   scene.add(craterTag, ventTag);
 
+  // Manager guide presence (SCRUM-200): a marker plus a name
+  // placard carrying the same identity the web challenge view
+  // shows. Static by design; motion belongs to a later slice.
+  if (manager !== null && manager !== undefined) {
+    const marker = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.55),
+      new THREE.MeshStandardMaterial({
+        color: 0x2c5c3f, emissive: 0x1d3d2a, emissiveIntensity: 0.8,
+        roughness: 0.5,
+      }),
+    );
+    marker.position.set(-6.2, 3.4, 6.4);
+    marker.castShadow = true;
+    const tag = textSprite(manager.name);
+    tag.position.set(-6.2, 5.0, 6.4);
+    scene.add(marker, tag);
+  }
+
   const smokeGeo = new THREE.BufferGeometry();
   const smokePos = new Float32Array(SMOKE_N * 3);
   const smokeSeed = new Float32Array(SMOKE_N);
@@ -303,7 +338,10 @@ export function createFixtureStage(
   })));
 
   const orbit = {
-    theta: 0.65, phi: 1.08, radius: 27, target: new THREE.Vector3(0, 3.6, 0),
+    theta: initialView?.theta ?? DEFAULT_VIEW.theta,
+    phi: initialView?.phi ?? DEFAULT_VIEW.phi,
+    radius: initialView?.radius ?? DEFAULT_VIEW.radius,
+    target: new THREE.Vector3(0, 3.6, 0),
   };
   let lastTouch = 0;
   function applyCamera(): void {
@@ -441,9 +479,41 @@ export function createFixtureStage(
     }
   });
 
+  function snapshotView(): OrbitView {
+    return { theta: orbit.theta, phi: orbit.phi, radius: orbit.radius };
+  }
+
+  function restoreView(view: OrbitView): void {
+    orbit.theta = view.theta;
+    orbit.phi = Math.min(1.45, Math.max(0.35, view.phi));
+    orbit.radius = Math.min(60, Math.max(12, view.radius));
+    applyCamera();
+  }
+
+  let promptSprite: THREE.Sprite | null = null;
+  function setPrompt(text: string | null): void {
+    if (promptSprite !== null) {
+      scene.remove(promptSprite);
+      const material = promptSprite.material as THREE.SpriteMaterial;
+      material.map?.dispose();
+      material.dispose();
+      promptSprite = null;
+    }
+    if (text === null || text === "") {
+      return;
+    }
+    promptSprite = textSprite(text);
+    promptSprite.position.set(0, 11.6, 0);
+    scene.add(promptSprite);
+  }
+  setPrompt(opts.prompt ?? null);
+
   return {
     enterAR,
     dispose,
     info: () => ({ webgl2: renderer.capabilities.isWebGL2 }),
+    snapshotView,
+    restoreView,
+    setPrompt,
   };
 }

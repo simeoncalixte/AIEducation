@@ -56,11 +56,13 @@ class ApiPlayTestCase(unittest.TestCase):
                 ("asset", self.ids["challenge_draft_id"]),
                 ("stage", self.ids["stage_draft_id"]),
                 ("lesson", self.ids["lesson_draft_id"])):
-            self.client.post(f"/review/{kind}/{vid}/approve",
-                             data={"rationale": "ok"})
-            resp = self.client.post(f"/review/{kind}/{vid}/publish",
-                                    data={"rationale": "ship"})
-            self.assertEqual(resp.status_code, 302)
+            resp = self.client.post(
+                f"/api/review/{kind}/{vid}/approve",
+                json={"rationale": "ok"})
+            self.assertEqual(resp.status_code, 200)
+            resp = self.client.post(f"/api/review/{kind}/{vid}/publish",
+                                    json={"rationale": "ship"})
+            self.assertEqual(resp.status_code, 200)
 
     def _assign(self, lesson_id=None):
         self.login("tess")
@@ -93,6 +95,29 @@ class ApiPlayTestCase(unittest.TestCase):
                             for model in briefing["models"]))
         self.assertIn("Eruption", briefing["stages"])
         self.assertIsNone(briefing["open_attempt_id"])
+
+    def test_briefing_exposes_pinned_stage_versions(self):
+        # SCRUM-127: the runtime client needs pinned stage version
+        # ids to call the launch and checkpoint endpoints.
+        aid = self._assign()
+        self.login("sam")
+        attempt_id = self.client.post(
+            f"/api/play/{aid}/start").get_json()["attempt_id"]
+        briefing = self.client.get(
+            f"/api/play/{aid}").get_json()["briefing"]
+        rows = briefing["stage_versions"]
+        self.assertTrue(rows)
+        self.assertEqual(
+            [row["title"] for row in rows], briefing["stages"])
+        engine = create_engine(self.url)
+        factory = sessionmaker(bind=engine)
+        with factory() as session:
+            pinned = set(session.scalars(
+                select(m.AttemptPin.stage_version_id).where(
+                    m.AttemptPin.attempt_id == attempt_id)))
+        engine.dispose()
+        self.assertEqual(
+            {row["stage_version_id"] for row in rows}, pinned)
 
     def test_start_opens_and_resumes_attempt(self):
         self._publish_challenge_lesson()
@@ -185,6 +210,7 @@ class ApiPlayTestCase(unittest.TestCase):
         self.assertEqual(
             challenge["challenge"]["goals"],
             [{"key": "crater", "answered": True},
+             {"key": "explain", "answered": False},
              {"key": "vent", "answered": False}])
 
 
