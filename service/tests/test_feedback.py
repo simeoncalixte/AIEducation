@@ -25,9 +25,12 @@ from DataModels import (  # noqa: E402
     ExperienceEvent,
     Goal,
     GoalEvaluation,
+    ImpactRollup,
     Lesson,
     LessonVersion,
     LessonVersionStage,
+    MasteryEvidence,
+    MasteryRecord,
     Membership,
     MembershipStatus,
     MentalModel,
@@ -321,14 +324,105 @@ class FeedbackTestCase(unittest.TestCase):
                 self.make_session, self.attempt_id, goal_id,
                 self.teacher_id, "pass")
         self.assertEqual(ctx.exception.code, "invalid_feedback")
+
+    def test_teacher_evaluation_regrade_latest_wins(self):
+        """Repeat grades append a new event; history is append-only."""
+        goal_id = self._scoped_teacher_goal()
+        first = record_teacher_evaluation(
+            self.make_session, self.attempt_id, goal_id,
+            self.teacher_id, True, rationale="First read.")
+        second = record_teacher_evaluation(
+            self.make_session, self.attempt_id, goal_id,
+            self.teacher_id, False, rationale="Second read.")
+        self.assertNotEqual(first, second)
+        with self.make_session() as session:
+            rows = list(session.scalars(
+                select(ExperienceEvent)
+                .where(
+                    ExperienceEvent.attempt_id == self.attempt_id,
+                    ExperienceEvent.goal_id == goal_id,
+                    ExperienceEvent.verb == "teacher-evaluation",
+                )
+                .order_by(ExperienceEvent.id)))
+            self.assertEqual([e.id for e in rows], [first, second])
+            self.assertEqual(
+                [e.payload["passed"] for e in rows], [True, False])
+            self.assertEqual(len({e.client_event_id for e in rows}), 2)
+            self.assertLess(
+                rows[0].sequence_no, rows[1].sequence_no)
+
+    def _link_goal_to_lesson_model(self, goal_id):
+        with self.make_session() as session, session.begin():
+            goal = session.get(Goal, goal_id)
+            model = session.scalar(select(MentalModel))
+            goal.mental_models.append(model)
+            return model.id
+
+    def test_teacher_evaluation_feeds_mastery(self):
+        goal_id = self._scoped_teacher_goal()
+        model_id = self._link_goal_to_lesson_model(goal_id)
+        eid = record_teacher_evaluation(
+            self.make_session, self.attempt_id, goal_id,
+            self.teacher_id, True, rationale="Names magma.")
+        with self.make_session() as session:
+            record = session.scalar(
+                select(MasteryRecord).where(
+                    MasteryRecord.student_id == self.student_id,
+                    MasteryRecord.mental_model_id == model_id))
+            self.assertIsNotNone(record)
+            self.assertEqual(record.score, 1.0)
+            self.assertGreater(record.confidence, 0.0)
+            links = list(session.scalars(
+                select(MasteryEvidence).where(
+                    MasteryEvidence.mastery_record_id == record.id)))
+            self.assertEqual(len(links), 1)
+            self.assertEqual(links[0].experience_event_id, eid)
+            self.assertEqual(links[0].source, "teacher-evaluation")
+            self.assertEqual(links[0].weight, 1.0)
+        record_teacher_evaluation(
+            self.make_session, self.attempt_id, goal_id,
+            self.teacher_id, False, rationale="Reread it.")
+        with self.make_session() as session:
+            record = session.scalar(
+                select(MasteryRecord).where(
+                    MasteryRecord.student_id == self.student_id,
+                    MasteryRecord.mental_model_id == model_id))
+            self.assertEqual(record.score, 0.0)
+            links = list(session.scalars(
+                select(MasteryEvidence).where(
+                    MasteryEvidence.mastery_record_id == record.id)))
+            self.assertEqual(len(links), 2)
+
+    def test_teacher_evaluation_feeds_impact(self):
+        goal_id = self._scoped_teacher_goal()
         record_teacher_evaluation(
             self.make_session, self.attempt_id, goal_id,
             self.teacher_id, True)
-        with self.assertRaises(PublicationError) as ctx:
-            record_teacher_evaluation(
-                self.make_session, self.attempt_id, goal_id,
-                self.teacher_id, False)
-        self.assertEqual(ctx.exception.code, "invalid_feedback")
+        with self.make_session() as session:
+            challenge_id = session.scalar(
+                select(Goal.challenge_version_id).where(
+                    Goal.id == goal_id))
+            rollup = session.scalar(
+                select(ImpactRollup)
+                .where(ImpactRollup.asset_version_id == challenge_id)
+                .order_by(ImpactRollup.id.desc())
+                .limit(1))
+            self.assertIsNotNone(rollup)
+            self.assertEqual(rollup.window, "all")
+            self.assertEqual(rollup.formula_version, "teacher/v1")
+            self.assertEqual(rollup.mastery, 1.0)
+            self.assertEqual(rollup.sample_size, 1)
+        record_teacher_evaluation(
+            self.make_session, self.attempt_id, goal_id,
+            self.teacher_id, False)
+        with self.make_session() as session:
+            rollups = list(session.scalars(
+                select(ImpactRollup).where(
+                    ImpactRollup.asset_version_id == challenge_id,
+                    ImpactRollup.window == "all")))
+            latest = max(rollups, key=lambda r: r.id)
+            self.assertEqual(latest.mastery, 0.0)
+            self.assertEqual(latest.sample_size, 1)
 
     def test_teacher_evaluation_rejects_out_of_scope_goal(self):
         with self.make_session() as session, session.begin():

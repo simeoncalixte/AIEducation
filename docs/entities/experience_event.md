@@ -20,10 +20,10 @@ records the consumed sequence watermark and evaluator version.
 | origin | enum{client, server} | Client verbs exclude goal-verdict/teacher-evaluation (CHECK) |
 | device | FK → [device](device.md), nullable | Reporting device |
 | actor | FK → [app_user](app_user.md) | Usually the student; teacher for flags |
-| verb | text | attempted, completed, scored, retried, rated, goal-verdict, teacher-evaluation, asset-used, teacher-flagged, … |
+| verb | text | attempted, completed, scored, retried, rated, goal-verdict, teacher-evaluation, launch-decision, asset-used, teacher-flagged, … |
 | object_type | text | e.g. challenge, goal, asset, stage, lesson |
 | object_ref | text | Target identifier |
-| goal | FK → [goal](goal.md), nullable | Set for goal-verdicts |
+| goal | FK → [goal](goal.md), nullable | Set for goal-verdicts and teacher-evaluations (repeat teacher grades append; latest wins at read time) |
 | challenge_version | FK → [asset_version](asset_version.md), nullable | Kind must be challenge |
 | asset_version | FK → [asset_version](asset_version.md), nullable | Set for asset-used |
 | stage_version | FK → [stage_version](stage_version.md), nullable | Stage in play |

@@ -65,11 +65,24 @@ button.danger { background: #8c1f1f; color: #fff; border: 1px solid #8c1f1f; }
 .xr-hud h1 { font-size: 1rem; margin: 0 0 .2rem; color: #fff; }
 .xr-hud p { margin: .1rem 0; font-variant-numeric: tabular-nums; }
 .xr-hud-title { top: .7rem; left: .7rem; max-width: min(92%, 24rem); }
+.xr-hud-guide { top: .7rem; right: .7rem; max-width: min(92%, 20rem); }
+.xr-hud-guide p { margin: 0; color: #ffd9a8; }
+.xr-hud-fallback { top: .7rem; left: 50%; transform: translateX(-50%);
+                  max-width: min(92%, 26rem); text-align: center; }
+.xr-hud-fallback p { margin: .1rem 0; }
+.xr-hud-caps button { margin-top: .4rem; padding: .3rem .7rem; }
 .xr-hud-caps { left: .7rem; bottom: .7rem; max-width: min(92%, 24rem);
                max-height: 38%; overflow: auto; }
 .xr-hud-caps table { font-size: .8rem; }
 .xr-hud-caps td { border: none; padding: .05rem .4rem .05rem 0; color: #eee; }
 .xr-hud-caps td:first-child { color: #9fb2c3; white-space: nowrap; }
+.xr-hud-challenge { top: 4.4rem; right: .7rem; max-width: min(92%, 22rem);
+                    max-height: 62%; overflow: auto; }
+.xr-hud-challenge label { display: block; margin: .15rem 0; color: #fff; }
+.xr-hud-challenge button { margin: .3rem .3rem 0 0; padding: .3rem .7rem; }
+.xr-hud-challenge a { color: #9fd0ff; }
+.xr-complete { margin-top: .4rem; border-top: 1px solid #2c353d;
+               padding-top: .3rem; }
 .xr-ar { position: absolute; z-index: 2; right: .9rem; bottom: .9rem;
          font-weight: 700; padding: .7rem 1.2rem; border-radius: 10px;
          border: 1px solid #3f6f4f; background: #2c5c3f; color: #fff; }

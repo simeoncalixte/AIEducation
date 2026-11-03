@@ -257,15 +257,25 @@ export function AssignmentProgressPage() {
                               >
                                 {verdict.passed ? "pass" : "fail"}
                               </span>{" "}
+                              {verdict.source === "teacher" &&
+                                "(teacher graded)"}
                               {verdict.overridden &&
                                 `(overridden: ${verdict.override_reason})`}
                             </td>
                             <td>
-                              <OverrideForm
-                                verdict={verdict}
-                                onDone={refresh}
-                                onError={setFlash}
-                              />
+                              {verdict.source === "teacher" ? (
+                                <Link
+                                  to={`/attempts/${attempt.id}/grading`}
+                                >
+                                  Re-grade
+                                </Link>
+                              ) : (
+                                <OverrideForm
+                                  verdict={verdict}
+                                  onDone={refresh}
+                                  onError={setFlash}
+                                />
+                              )}
                             </td>
                           </tr>
                         ))}

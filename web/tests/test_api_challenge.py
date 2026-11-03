@@ -56,11 +56,13 @@ class ApiChallengeTestCase(unittest.TestCase):
                 ("asset", self.ids["challenge_draft_id"]),
                 ("stage", self.ids["stage_draft_id"]),
                 ("lesson", self.ids["lesson_draft_id"])):
-            self.client.post(f"/review/{kind}/{vid}/approve",
-                             data={"rationale": "ok"})
-            resp = self.client.post(f"/review/{kind}/{vid}/publish",
-                                    data={"rationale": "ship"})
-            self.assertEqual(resp.status_code, 302)
+            resp = self.client.post(
+                f"/api/review/{kind}/{vid}/approve",
+                json={"rationale": "ok"})
+            self.assertEqual(resp.status_code, 200)
+            resp = self.client.post(f"/api/review/{kind}/{vid}/publish",
+                                    json={"rationale": "ship"})
+            self.assertEqual(resp.status_code, 200)
 
     def _assign(self):
         self.login("tess")
@@ -102,6 +104,7 @@ class ApiChallengeTestCase(unittest.TestCase):
         self.assertEqual(
             challenge["goals"],
             [{"key": "crater", "answered": False},
+             {"key": "explain", "answered": False},
              {"key": "vent", "answered": False}])
         self.assertEqual(challenge["guides"],
                          [{"name": "Manager", "role": "guide"}])
@@ -120,16 +123,34 @@ class ApiChallengeTestCase(unittest.TestCase):
         payload = resp.get_json()
         self.assertTrue(payload["next"].endswith(
             f"/play/attempt/{attempt_id}/debrief"))
-        body = self.client.get(payload["next"]).get_data(as_text=True)
-        for marker in ("crater", "pass", "vent", "fail"):
-            self.assertIn(marker, body)
+        debrief = self.client.get(
+            f"/api/play/attempt/{attempt_id}/debrief"
+        ).get_json()["debrief"]
+        verdicts = {(row["goal"], row["passed"])
+                    for row in debrief["verdicts"]}
+        self.assertEqual(verdicts, {("crater", True), ("vent", False)})
         answered = self.client.get(
             f"/api/play/attempt/{attempt_id}/challenge/1"
         ).get_json()["challenge"]["goals"]
         self.assertEqual(
             answered,
             [{"key": "crater", "answered": True},
+             {"key": "explain", "answered": False},
              {"key": "vent", "answered": False}])
+
+    def test_challenge_carries_stage_version_for_ar(self):
+        self._publish_challenge_lesson()
+        aid = self._assign()
+        self.login("sam")
+        attempt_id = self._start(aid)
+        resp = self.client.get(
+            f"/api/play/attempt/{attempt_id}/challenge/1")
+        self.assertEqual(resp.status_code, 200)
+        challenge = resp.get_json()["challenge"]
+        briefing = self.client.get(f"/api/play/{aid}").get_json()["briefing"]
+        pinned = {row["stage_version_id"]
+                  for row in briefing["stage_versions"]}
+        self.assertIn(challenge["stage_version_id"], pinned)
 
     def test_bad_index_is_404_as_json(self):
         self._publish_challenge_lesson()
@@ -209,7 +230,9 @@ class ApiChallengeTestCase(unittest.TestCase):
         self.client.post(
             f"/api/play/attempt/{attempt_id}/challenge/1/answer",
             json={"goals": ["crater"]})
-        self.client.post(f"/play/attempt/{attempt_id}/finish")
+        resp = self.client.post(
+            f"/api/play/attempt/{attempt_id}/finish")
+        self.assertEqual(resp.status_code, 200)
         resp = self.client.post(
             f"/api/play/attempt/{attempt_id}/challenge/1/answer",
             json={"goals": ["crater", "vent"]})

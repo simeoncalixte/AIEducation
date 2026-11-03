@@ -112,6 +112,26 @@ class ApiCheckpointsTestCase(unittest.TestCase):
         self.assertEqual(found["state"], {"renderer": "web", "at": 2})
         self.assertFalse(found["preview"])
 
+    def test_resume_after_close_returns_latest_snapshot(self):
+        # SCRUM-127: closing or dropping the client must not lose
+        # progress; a fresh client resumes the newest snapshot.
+        attempt_id = self._attempt()
+        vid = self._pinned_stage_version(attempt_id)
+        state = {"renderer": "immersive", "schema_version": 1,
+                 "view": {"theta": 0.9, "phi": 1.0, "radius": 30}}
+        saved = self._save(attempt_id, vid, state).get_json()
+        self.client = self.app.test_client()
+        self.login("sam")
+        resp = self.client.get(
+            f"/api/play/attempt/{attempt_id}/checkpoints/latest")
+        self.assertEqual(resp.status_code, 200)
+        found = resp.get_json()["checkpoint"]
+        self.assertEqual(
+            found["checkpoint_sequence"], saved["checkpoint_sequence"])
+        self.assertEqual(found["stage_version_id"], vid)
+        self.assertEqual(found["state"], state)
+        self.assertFalse(found["preview"])
+
     def test_latest_empty_is_404(self):
         attempt_id = self._attempt()
         resp = self.client.get(

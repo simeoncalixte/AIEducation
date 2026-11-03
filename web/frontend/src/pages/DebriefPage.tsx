@@ -97,6 +97,7 @@ export function DebriefPage() {
                   >
                     {verdict.passed ? "pass" : "fail"}
                   </span>{" "}
+                  {verdict.source === "teacher" && "(teacher graded)"}
                   {verdict.overridden && "(teacher corrected)"}
                 </td>
               </tr>
@@ -105,6 +106,17 @@ export function DebriefPage() {
         </table>
       ) : (
         <EmptyState>No verdicts yet.</EmptyState>
+      )}
+
+      <h2>Next steps</h2>
+      {debrief.next_steps.length > 0 ? (
+        <ul>
+          {debrief.next_steps.map((step, position) => (
+            <li key={`${step.kind}-${step.goal ?? position}`}>{step.text}</li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState>No follow-ups.</EmptyState>
       )}
 
       <h2>Enjoyment</h2>

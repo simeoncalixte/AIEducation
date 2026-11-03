@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "database"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
@@ -259,6 +259,70 @@ class EvaluateAttemptTestCase(unittest.TestCase):
         with self.assertRaises(PublicationError) as ctx:
             evaluate_attempt(self.make_session, 9999)
         self.assertEqual(ctx.exception.code, "not_found")
+
+    def test_verdict_records_consumed_watermark(self):
+        self._emit("goal-attempted", "crater")
+        self._emit("viewed", "vent")
+        evaluate_attempt(self.make_session, self.attempt_id)
+        with self.make_session() as session:
+            rows = list(session.scalars(
+                select(ExperienceEvent).where(
+                    ExperienceEvent.attempt_id == self.attempt_id,
+                    ExperienceEvent.verb == "goal-verdict")))
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                self.assertEqual(
+                    row.payload["evaluated_upto_sequence"], 2)
+                self.assertEqual(row.evaluator_version, "goals/v1")
+
+    def test_late_events_do_not_alter_issued_verdicts(self):
+        self._emit("goal-attempted", "crater")
+        evaluate_attempt(self.make_session, self.attempt_id)
+        before = self._verdicts()
+        # A late arrival that would flip the "quiet" absent-rule.
+        with self.make_session() as session:
+            self.seq = session.scalar(
+                select(func.max(ExperienceEvent.sequence_no)).where(
+                    ExperienceEvent.attempt_id == self.attempt_id))
+        self._emit("shouted", "loud")
+        self.assertEqual(
+            evaluate_attempt(self.make_session, self.attempt_id), [])
+        self.assertEqual(self._verdicts(), before)
+        with self.make_session() as session:
+            rows = list(session.scalars(
+                select(ExperienceEvent).where(
+                    ExperienceEvent.attempt_id == self.attempt_id,
+                    ExperienceEvent.verb == "goal-verdict")))
+            for row in rows:
+                self.assertEqual(
+                    row.payload["evaluated_upto_sequence"], 1)
+
+    def test_replay_reproduces_watermarks(self):
+        self._emit("goal-attempted", "crater")
+        self._emit("viewed", "vent")
+        evaluate_attempt(self.make_session, self.attempt_id)
+        with self.make_session() as session:
+            before = sorted(
+                (r.object_ref, r.payload["evaluated_upto_sequence"])
+                for r in session.scalars(
+                    select(ExperienceEvent).where(
+                        ExperienceEvent.attempt_id == self.attempt_id,
+                        ExperienceEvent.verb == "goal-verdict")))
+        with self.make_session() as session, session.begin():
+            for row in session.scalars(
+                    select(ExperienceEvent).where(
+                        ExperienceEvent.attempt_id == self.attempt_id,
+                        ExperienceEvent.verb == "goal-verdict")):
+                session.delete(row)
+        evaluate_attempt(self.make_session, self.attempt_id)
+        with self.make_session() as session:
+            after = sorted(
+                (r.object_ref, r.payload["evaluated_upto_sequence"])
+                for r in session.scalars(
+                    select(ExperienceEvent).where(
+                        ExperienceEvent.attempt_id == self.attempt_id,
+                        ExperienceEvent.verb == "goal-verdict")))
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

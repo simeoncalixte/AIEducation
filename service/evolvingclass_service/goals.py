@@ -11,7 +11,10 @@ not match this schema, and teacher-graded goals, produce no verdict —
 the teacher grades those from recorded evidence. Evaluation is a pure
 function of the attempt's client-origin events in sequence order, so
 re-running stored events always yields the same verdicts; verdicts are
-recomputed, never replayed.
+recomputed, never replayed. Each verdict payload records the consumed
+sequence watermark (``evaluated_upto_sequence``) alongside the
+evaluator version, so late arrivals stay excluded from verdicts
+already issued (SCRUM-37).
 """
 
 from __future__ import annotations
@@ -112,6 +115,8 @@ def evaluate_attempt(
                 )
             ).all()
         }
+        watermark = max(
+            (event.sequence_no for event in events), default=0)
         new_ids: list[int] = []
         for goal in _challenge_goals(session, attempt):
             if goal.id in issued:
@@ -138,6 +143,7 @@ def evaluate_attempt(
                 payload={
                     "passed": passed,
                     "goal_key": goal.key,
+                    "evaluated_upto_sequence": watermark,
                     "evidence": f"rule {dict(goal.rule or {})} "
                                 f"over {len(events)} client event(s)",
                 },

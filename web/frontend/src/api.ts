@@ -353,6 +353,8 @@ export interface ProgressVerdict {
   score: number | null;
   overridden: boolean;
   override_reason: string;
+  source: "deterministic" | "teacher";
+  rationale: string;
 }
 
 export interface ProgressFlag {
@@ -407,6 +409,11 @@ export interface FlagPayload {
   note: string;
 }
 
+export interface BriefingStageVersion {
+  stage_version_id: number;
+  title: string;
+}
+
 export interface Briefing {
   assignment_id: number;
   lesson: string;
@@ -414,6 +421,7 @@ export interface Briefing {
   objectives?: string[];
   models?: string[];
   stages?: string[];
+  stage_versions?: BriefingStageVersion[];
   open_attempt_id?: number | null;
 }
 
@@ -438,6 +446,7 @@ export interface Challenge {
   assignment_id: number;
   index: number;
   total: number;
+  stage_version_id: number;
   stage: string;
   title: string;
   challenge_version_id: number;
@@ -464,6 +473,62 @@ export interface DebriefVerdict {
   score: number | null;
   overridden: boolean;
   override_reason: string;
+  source: "deterministic" | "teacher";
+  rationale: string;
+}
+
+export interface GradingEvaluation {
+  event_id: number;
+  passed: boolean | null;
+  rationale: string;
+  by: string;
+  at: string;
+}
+
+export interface GradingGoal {
+  goal_id: number;
+  key: string;
+  challenge_version_id: number;
+  challenge: string;
+  rubric: Record<string, unknown>;
+  evaluation: GradingEvaluation | null;
+}
+
+export interface GradingEvidence {
+  id: number;
+  sequence_no: number;
+  verb: string;
+  object_ref: string;
+  goal: string | null;
+  note: string;
+  at: string;
+}
+
+export interface Grading {
+  attempt_id: number;
+  assignment_id: number;
+  lesson: string;
+  student: string;
+  finished: boolean;
+  goals: GradingGoal[];
+  evidence: GradingEvidence[];
+}
+
+export interface GradePayload {
+  goal_id: number;
+  passed: boolean;
+  rationale: string;
+}
+
+export interface GradeResult {
+  message: string;
+  event_id: number;
+}
+
+export interface NextStep {
+  kind: "continue" | "retry_goal" | "advance";
+  goal: string | null;
+  text: string;
 }
 
 export interface Debrief {
@@ -472,6 +537,7 @@ export interface Debrief {
   lesson: string;
   finished: boolean;
   verdicts: DebriefVerdict[];
+  next_steps: NextStep[];
   rating: number | null;
   preview: boolean;
 }
@@ -536,6 +602,68 @@ export interface AuditQuery {
   actor?: string;
   since?: string;
   until?: string;
+}
+
+/** Challenge telemetry event per the experience_event contract. */
+export interface PlayEventInput {
+  client_event_id: string;
+  verb: string;
+  object_type?: string;
+  object_ref?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface PlayEventResult {
+  message: string;
+  event_id: number;
+  duplicate: boolean;
+}
+
+export interface CheckpointInput {
+  stage_version_id: number;
+  state: Record<string, unknown>;
+}
+
+export interface Checkpoint {
+  id: number;
+  stage_version_id: number;
+  checkpoint_sequence: number;
+  state: Record<string, unknown>;
+  preview: boolean;
+}
+
+export interface CheckpointResult {
+  message: string;
+  checkpoint_id: number;
+  checkpoint_sequence: number;
+}
+
+export interface LaunchInput {
+  stage_version_id: number;
+  capabilities?: string[];
+  device_id?: number;
+}
+
+export interface LaunchDecision {
+  route: "immersive" | "web";
+  reason: string;
+  missing_required: string[];
+  missing_preferred: string[];
+  stage_version_id: number;
+  device_id: number | null;
+  event_id: number;
+  message: string;
+}
+
+export interface LaunchRecord {
+  event_id: number;
+  sequence_no: number;
+  stage_version_id: number;
+  device_id: number | null;
+  route: string;
+  reason: string;
+  missing_required: string[];
+  missing_preferred: string[];
 }
 
 const API_BASE = (
@@ -691,6 +819,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  grading: (attemptId: number) =>
+    apiFetch<{ grading: Grading }>(`/api/attempts/${attemptId}/grading`),
+  gradeGoal: (attemptId: number, payload: GradePayload) =>
+    apiFetch<GradeResult>(
+      `/api/attempts/${attemptId}/teacher-evaluations`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
   briefing: (assignmentId: number) =>
     apiFetch<{ briefing: Briefing }>(`/api/play/${assignmentId}`),
   startAttempt: (assignmentId: number) =>
@@ -727,6 +862,29 @@ export const api = {
     apiFetch<RetryResult>(`/api/play/attempt/${attemptId}/retry`, {
       method: "POST",
     }),
+  postPlayEvent: (attemptId: number, event: PlayEventInput) =>
+    apiFetch<PlayEventResult>(
+      `/api/play/attempt/${attemptId}/events`,
+      { method: "POST", body: JSON.stringify(event) },
+    ),
+  saveCheckpoint: (attemptId: number, input: CheckpointInput) =>
+    apiFetch<CheckpointResult>(
+      `/api/play/attempt/${attemptId}/checkpoints`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+  latestCheckpoint: (attemptId: number) =>
+    apiFetch<{ checkpoint: Checkpoint }>(
+      `/api/play/attempt/${attemptId}/checkpoints/latest`,
+    ),
+  decideLaunch: (attemptId: number, input: LaunchInput) =>
+    apiFetch<LaunchDecision>(`/api/play/attempt/${attemptId}/launch`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  listLaunches: (attemptId: number) =>
+    apiFetch<{ launches: LaunchRecord[]; preview: boolean }>(
+      `/api/play/attempt/${attemptId}/launch`,
+    ),
   audit: (query?: AuditQuery) => {
     const params = new URLSearchParams();
     if (query?.actor) {

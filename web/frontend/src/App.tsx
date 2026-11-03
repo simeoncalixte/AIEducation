@@ -11,6 +11,7 @@ import { DebriefPage } from "./pages/DebriefPage";
 import { DirectivesPage } from "./pages/DirectivesPage";
 import { EditDirectivePage } from "./pages/EditDirectivePage";
 import { EditDraftPage } from "./pages/EditDraftPage";
+import { GradingPage } from "./pages/GradingPage";
 import { HomePage } from "./pages/HomePage";
 import { LessonsPage } from "./pages/LessonsPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -50,6 +51,10 @@ export function AppRoutes() {
         <Route
           path="/play/attempt/:attemptId/debrief"
           element={<DebriefPage />}
+        />
+        <Route
+          path="/attempts/:attemptId/grading"
+          element={<GradingPage />}
         />
         <Route path="/review" element={<ReviewQueuesPage />} />
         <Route

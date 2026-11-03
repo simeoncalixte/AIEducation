@@ -14,6 +14,13 @@ from .feedback import (
     record_verdict_override,
 )
 from .goals import evaluate_attempt
+from .launch import (
+    decide_launch,
+    list_launch_decisions,
+    match_capabilities,
+    register_device,
+    report_device_capabilities,
+)
 from .play import (
     answer_challenge,
     finish_attempt,
@@ -53,14 +60,19 @@ __all__ = [
     "assign_lesson",
     "create_steer_directive",
     "deactivate_directive",
+    "decide_launch",
     "answer_challenge",
     "ensure_draft",
     "evaluate_attempt",
     "finish_attempt",
     "flag_misconception",
     "latest_checkpoint",
+    "list_launch_decisions",
+    "match_capabilities",
     "rate_lesson",
     "record_client_event",
+    "register_device",
+    "report_device_capabilities",
     "record_teacher_evaluation",
     "record_verdict_override",
     "retry_attempt",

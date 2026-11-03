@@ -690,7 +690,11 @@ def _verdict_rows(session: Session, attempt) -> list[dict]:
     from DataModels import ExperienceEvent, VerdictOverride
 
     rows = []
+    teacher_latest: dict = {}
     for event in sorted(attempt.events, key=lambda e: e.id):
+        if event.verb == "teacher-evaluation":
+            teacher_latest[event.goal_id or event.object_ref] = event
+            continue
         if event.verb != "goal-verdict":
             continue
         override = session.scalar(
@@ -713,7 +717,22 @@ def _verdict_rows(session: Session, attempt) -> list[dict]:
             "score": score,
             "overridden": override is not None,
             "override_reason": override.reason if override else "",
+            "source": "deterministic",
+            "rationale": "",
         })
+    for event in sorted(teacher_latest.values(), key=lambda e: e.id):
+        payload = event.payload or {}
+        rows.append({
+            "event_id": event.id,
+            "goal": event.object_ref,
+            "passed": payload.get("passed"),
+            "score": payload.get("score"),
+            "overridden": False,
+            "override_reason": "",
+            "source": "teacher",
+            "rationale": payload.get("rationale", ""),
+        })
+    rows.sort(key=lambda row: row["event_id"])
     return rows
 
 
@@ -901,6 +920,14 @@ def briefing(session: Session, assignment_id: int,
             version.mental_models, key=lambda m: m.position)],
         "stages": [link.stage_version.stage.title for link in sorted(
             version.composition, key=lambda l: l.position)],
+        # Pinned stage version ids for the immersive runtime
+        # client (SCRUM-127): launch and checkpoint calls need
+        # them, and titles alone cannot address a version.
+        "stage_versions": [
+            {"stage_version_id": link.stage_version_id,
+             "title": link.stage_version.stage.title}
+            for link in sorted(version.composition,
+                               key=lambda l: l.position)],
         "open_attempt_id": open_attempt.id if open_attempt else None,
     }
 
@@ -923,6 +950,7 @@ def _play_challenges(pinned_version) -> list[dict]:
                 continue
             challenges.append({
                 "challenge_version_id": candidate.id,
+                "stage_version_id": link.stage_version_id,
                 "stage": link.stage_version.stage.title,
                 "title": candidate.asset.title,
                 "goals": sorted(goal.key for goal in candidate.goals),
@@ -961,6 +989,7 @@ def challenge_view(session: Session, attempt_id: int,
         "assignment_id": attempt.assignment_id,
         "index": index,
         "total": len(challenges),
+        "stage_version_id": entry["stage_version_id"],
         "stage": entry["stage"],
         "title": entry["title"],
         "challenge_version_id": entry["challenge_version_id"],
@@ -971,21 +1000,119 @@ def challenge_view(session: Session, attempt_id: int,
     }
 
 
+def _next_steps(verdict_rows: list[dict]) -> list[dict]:
+    """Gap-driven follow-up direction from verdict rows (SCRUM-36).
+
+    Failed goals name themselves so the student knows what to revisit;
+    a clean sweep points at finishing, and an empty record points at
+    the remaining challenges.
+    """
+    if not verdict_rows:
+        return [{
+            "kind": "continue",
+            "goal": None,
+            "text": "Work through the challenges — no verdicts yet.",
+        }]
+    failed = [row for row in verdict_rows if row["passed"] is False]
+    if not failed:
+        return [{
+            "kind": "advance",
+            "goal": None,
+            "text": (f"All {len(verdict_rows)} goal(s) passed — finish "
+                     "the lesson or retry to improve."),
+        }]
+    return [{
+        "kind": "retry_goal",
+        "goal": row["goal"],
+        "text": (f"Revisit '{row['goal']}' in the scene and try again — "
+                 "it didn't pass yet."),
+    } for row in failed]
+
+
 def debrief_view(session: Session, attempt_id: int) -> dict | None:
-    """Results, rating, and retry for one attempt, or None."""
+    """Results, rating, next steps, and retry for one attempt, or None."""
     from DataModels import Attempt
 
     attempt = session.get(Attempt, attempt_id)
     if attempt is None:
         return None
+    verdicts = _verdict_rows(session, attempt)
     return {
         "attempt_id": attempt.id,
         "assignment_id": attempt.assignment_id,
         "lesson": attempt.assignment.lesson.title,
         "finished": attempt.finished_at is not None,
-        "verdicts": _verdict_rows(session, attempt),
+        "verdicts": verdicts,
+        "next_steps": _next_steps(verdicts),
         "rating": _latest_rating(session, attempt.assignment.lesson_id,
                                  attempt.student_id),
+    }
+
+
+def grading_view(session: Session, attempt_id: int) -> dict | None:
+    """Recorded evidence alongside rubric criteria, or None (SCRUM-129)."""
+    from DataModels import AssetKind, Attempt, EventOrigin, \
+        ExperienceEvent, GoalEvaluation
+
+    attempt = session.get(Attempt, attempt_id)
+    if attempt is None:
+        return None
+    goals = []
+    for link in sorted(attempt.pinned_lesson_version.composition,
+                       key=lambda l: l.position):
+        uses = sorted(link.stage_version.asset_uses,
+                      key=lambda u: u.position)
+        for use in uses:
+            candidate = use.asset_version
+            if candidate.asset.kind is not AssetKind.challenge:
+                continue
+            for goal in sorted(candidate.goals, key=lambda g: g.key):
+                if goal.evaluation is not GoalEvaluation.teacher:
+                    continue
+                latest = session.scalar(
+                    select(ExperienceEvent)
+                    .where(
+                        ExperienceEvent.attempt_id == attempt.id,
+                        ExperienceEvent.goal_id == goal.id,
+                        ExperienceEvent.verb == "teacher-evaluation",
+                    )
+                    .order_by(desc(ExperienceEvent.id))
+                    .limit(1)
+                )
+                payload = (latest.payload or {}) if latest else {}
+                goals.append({
+                    "goal_id": goal.id,
+                    "key": goal.key,
+                    "challenge_version_id": candidate.id,
+                    "challenge": candidate.asset.title,
+                    "rubric": dict(goal.rubric or {}),
+                    "evaluation": None if latest is None else {
+                        "event_id": latest.id,
+                        "passed": payload.get("passed"),
+                        "rationale": payload.get("rationale", ""),
+                        "by": latest.actor.display_name,
+                        "at": str(latest.created_at),
+                    },
+                })
+    evidence = [{
+        "id": event.id,
+        "sequence_no": event.sequence_no,
+        "verb": event.verb,
+        "object_ref": event.object_ref,
+        "goal": event.goal.key if event.goal is not None else None,
+        "note": (event.payload or {}).get("note", ""),
+        "at": str(event.created_at),
+    } for event in sorted(
+        (e for e in attempt.events if e.origin is EventOrigin.client),
+        key=lambda e: e.sequence_no)]
+    return {
+        "attempt_id": attempt.id,
+        "assignment_id": attempt.assignment_id,
+        "lesson": attempt.assignment.lesson.title,
+        "student": attempt.student.display_name,
+        "finished": attempt.finished_at is not None,
+        "goals": goals,
+        "evidence": evidence,
     }
 
 

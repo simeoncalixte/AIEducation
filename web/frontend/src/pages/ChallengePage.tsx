@@ -84,7 +84,12 @@ export function ChallengePage() {
       <p>
         <strong>
           {`Challenge ${challenge.index} of ${challenge.total}`}
-        </strong>
+        </strong>{" "}
+        <Link
+          to={`/xr-fixture?attempt=${challenge.attempt_id}&stage=${challenge.stage_version_id}&challenge=${challenge.index}`}
+        >
+          Open in AR
+        </Link>
       </p>
       {challenge.guides.length > 0 && (
         <p className="muted">

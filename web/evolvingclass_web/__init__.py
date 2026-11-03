@@ -1,4 +1,4 @@
-"""EvolvingClass teacher web UI (server-rendered Flask pages)."""
+"""EvolvingClass JSON API over the service layer (React owns the UI)."""
 
 __all__ = ["create_app"]
 

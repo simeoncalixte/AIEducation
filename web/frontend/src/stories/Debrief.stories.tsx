@@ -77,6 +77,10 @@ export const EmptyDebrief: Story = {
     await canvas.findByText("Goal verdicts");
     const main = within(canvas.getByRole("main"));
     expect(main.getByText("No verdicts yet.")).toBeInTheDocument();
+    expect(main.getByText("Next steps")).toBeInTheDocument();
+    expect(
+      main.getByText("Work through the challenges — no verdicts yet."),
+    ).toBeInTheDocument();
     expect(
       main.getByRole("button", { name: "Save rating" }),
     ).toBeInTheDocument();
@@ -156,6 +160,10 @@ export const AnsweredRoundTrip: Story = {
     testNavigate?.(`/play/attempt/${attempt_id}/challenge/1`);
     await canvas.findByText("Challenge 1 of 1");
     const challenge = within(canvas.getByRole("main"));
+    const arLink = challenge.getByRole("link", { name: "Open in AR" });
+    expect(arLink.getAttribute("href")).toContain(
+      `/xr-fixture?attempt=${attempt_id}`,
+    );
     await userEvent.click(challenge.getByRole("checkbox", { name: "crater" }));
     await userEvent.type(
       challenge.getByLabelText("Note (optional)"),
@@ -175,6 +183,9 @@ export const AnsweredRoundTrip: Story = {
     expect(ventRow).not.toBeNull();
     expect(
       within(ventRow as HTMLElement).getByText("fail"),
+    ).toBeInTheDocument();
+    expect(
+      main.getByText(/Revisit 'vent' in the scene/),
     ).toBeInTheDocument();
     await logout(canvas);
   },

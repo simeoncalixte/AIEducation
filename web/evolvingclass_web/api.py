@@ -29,12 +29,14 @@ from evolvingclass_service import (
     assign_lesson,
     create_steer_directive,
     deactivate_directive,
+    decide_launch,
     finish_attempt,
     flag_misconception,
     publish_asset_version,
     publish_lesson_version,
     publish_stage_version,
     latest_checkpoint,
+    list_launch_decisions,
     rate_lesson,
     record_approval,
     record_client_event,
@@ -485,6 +487,69 @@ def register_api(app: Flask, db, current_user) -> None:
             return _err("No checkpoints yet.", 404)
         return jsonify({"checkpoint": dict(found, preview=access["preview"])})
 
+    @app.route("/api/play/attempt/<int:attempt_id>/launch",
+               methods=["POST"], endpoint="api_play_launch")
+    def api_play_launch(attempt_id: int):
+        user = current_user()
+        if user is None:  # pragma: no cover - _guard answers first
+            return _err("Log in first.", 401)
+        _, denied = _attempt_access(attempt_id, True)
+        if denied is not None:
+            return denied
+        payload = _payload()
+        try:
+            stage_version_id = int(payload.get("stage_version_id"))
+        except (TypeError, ValueError):
+            return _err("Launch rejected (invalid_launch): "
+                        "stage_version_id must be an integer.", 400)
+        capabilities = payload.get("capabilities")
+        if capabilities is not None and not isinstance(capabilities, list):
+            return _err("Launch rejected (invalid_launch): "
+                        "capabilities must be a list.", 400)
+        device_id = payload.get("device_id")
+        if device_id is not None:
+            try:
+                device_id = int(device_id)
+            except (TypeError, ValueError):
+                return _err("Launch rejected (invalid_launch): "
+                            "device_id must be an integer.", 400)
+        if capabilities is None and device_id is None:
+            return _err("Launch rejected (invalid_launch): "
+                        "capabilities or device_id required.", 400)
+        try:
+            decision = decide_launch(
+                app.config["make_session"], attempt_id, user["id"],
+                stage_version_id, list(capabilities or []),
+                device_id=device_id)
+        except PublicationError as exc:
+            status = {"not_found": 404, "forbidden": 403}.get(exc.code, 400)
+            return jsonify(
+                {"error": f"Launch rejected ({exc.code}): {exc}",
+                 "code": exc.code}), status
+        return jsonify(dict(
+            decision, message=f"Launch routed {decision['route']}."))
+
+    @app.route("/api/play/attempt/<int:attempt_id>/launch",
+               methods=["GET"], endpoint="api_play_launches")
+    def api_play_launches(attempt_id: int):
+        user = current_user()
+        if user is None:  # pragma: no cover - _guard answers first
+            return _err("Log in first.", 401)
+        access, denied = _attempt_access(attempt_id, False)
+        if denied is not None:
+            return denied
+        try:
+            launches = list_launch_decisions(
+                app.config["make_session"], attempt_id,
+                user["id"] if not access["preview"]
+                else present.attempt_owner(db(), attempt_id))
+        except PublicationError as exc:
+            status = {"not_found": 404, "forbidden": 403}.get(exc.code, 400)
+            return jsonify(
+                {"error": f"Launch rejected ({exc.code}): {exc}",
+                 "code": exc.code}), status
+        return jsonify({"launches": launches, "preview": access["preview"]})
+
     @app.route("/api/play/attempt/<int:attempt_id>/debrief",
                methods=["GET"], endpoint="api_play_debrief")
     def api_play_debrief(attempt_id: int):
@@ -629,6 +694,17 @@ def register_api(app: Flask, db, current_user) -> None:
                  "code": exc.code}), status
         return jsonify({"message": "Evaluation recorded.",
                         "event_id": event_id})
+
+    @app.route("/api/attempts/<int:attempt_id>/grading",
+               methods=["GET"], endpoint="api_attempt_grading")
+    def api_attempt_grading(attempt_id: int):
+        _, denied = _staff()
+        if denied is not None:
+            return denied
+        view = present.grading_view(db(), attempt_id)
+        if view is None:
+            return _err("Unknown attempt", 404)
+        return jsonify({"grading": view})
 
     @app.route("/api/lessons/<int:lesson_id>/brief", methods=["GET"],
                endpoint="api_brief_context")
